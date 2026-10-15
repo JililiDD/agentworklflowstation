@@ -10,6 +10,12 @@
 - 本机 Codex 最便宜的模型是 `codexJ/gpt-6-luna`，不是计划里的 `gpt-5.6-luna`。
 - 来源：`spikes/pi-capabilities.ts` 在 1.3.0 上的运行记录。
 
+## 2026-10-15 Google 订阅经 antigravity
+
+- 本机 Google Gemini 订阅经 `antigravity` oauth 可用。模型标识形如 `antigravity/gemini-3.7-flash`。
+- 这取代 2026-10-14 条目中「pi 不支持 Google 的订阅登录」这一句。该条其余内容不变。
+- Phase 1 仍不验证 Google。见 `memory/decisions.md` 同日条目。
+
 ## 2026-10-14 pi 的凭证和计费
 
 - pi 用 `/login` 登录，凭证保存在 `~/.pi/agent/auth.json`。pi 不复用 Claude Code、Codex 或 Gemini CLI 的登录。

@@ -69,6 +69,13 @@
 - **影响：** 本条取代 Phase 1 Plan 中锁定 1.2.0 的决定。
 - **来源：** 用户在 2026-10-15 的回复。
 
+## 2026-10-15 Google Gemini 订阅可用，Phase 1 仍不做
+
+- **选择：** Phase 1 真实模型验证仍只用 Anthropic 和 Codex。Google 留给以后的阶段。
+- **理由：** 本机已有 Google Gemini 订阅，经 antigravity oauth 可用。用户选择不扩大 Phase 1 范围。
+- **影响：** 本条更新「2026-10-14 第 1 阶段只验证 Anthropic 和 OpenAI」中 Google 不可用的理由。该条的范围不变。
+- **来源：** 用户在 2026-10-15 选择 (a)。
+
 ## 2026-10-14 第 1 阶段只验证 Anthropic 和 OpenAI
 
 - **选择：** 第 1 阶段的真实模型验证只用 Anthropic（Claude 订阅）和 OpenAI（ChatGPT 订阅）。Google 暂不使用。
