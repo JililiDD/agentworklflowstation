@@ -18,6 +18,7 @@ export interface FakeSessionAdapter extends SessionAdapter {
   nextUsage: TokenUsage;
   nextEvents?: StepEvent[];
   nextQuestion?: Question;
+  failures: Error[];
   onPrompt?: (workDir: string, text: string) => Promise<void>;
 }
 
@@ -38,6 +39,7 @@ export function createFakeSessionAdapter(): FakeSessionAdapter {
     answers,
     rates: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
     nextUsage: { inputTokens: 10, outputTokens: 4 },
+    failures: [],
     async createSession(options: CreateSessionOptions) {
       receivedCredentials.push(options.credentials);
       askEnabled.push(options.ask !== undefined);
@@ -73,6 +75,8 @@ export function createFakeSessionAdapter(): FakeSessionAdapter {
             });
             answers.push(await options.ask(adapter.nextQuestion, signal));
           }
+          const failure = adapter.failures.shift();
+          if (failure !== undefined) throw failure;
           await adapter.onPrompt?.(options.workDir, text);
         },
         async dispose() {

@@ -54,13 +54,13 @@ export async function runNodeCli(argv: string[]): Promise<number> {
   const continuation = flagValue(argv, "--continue");
   if (definitionPath === undefined || outputDir === undefined) {
     process.stderr.write(
-      "usage: run-node --definition <file.json> --output <dir> [--continue <instruction>]\n",
+      "usage: run-node --definition <file.json> --output <dir> [--continue <agent instruction>]\n",
     );
     return 2;
   }
   const definition = await readNodeDefinitionFile(resolve(definitionPath));
-  if (definition.kind !== "agent") {
-    process.stderr.write("only agent nodes are supported\n");
+  if (definition.kind === "command" && continuation !== undefined) {
+    process.stderr.write("--continue is only supported for agent nodes\n");
     return 2;
   }
   const resolvedOutput = resolve(outputDir);
@@ -93,6 +93,14 @@ export async function runNodeCli(argv: string[]): Promise<number> {
     },
   };
   try {
+    if (definition.kind === "command") {
+      const result = await runner.runCommand(definition, context);
+      printResult("status", result);
+      for (const [name, path] of Object.entries(result.outputs)) {
+        process.stdout.write(`${name}=${path}\n`);
+      }
+      return result.status === "succeeded" ? 0 : 1;
+    }
     const result = await runner.runAgent(definition, context);
     printResult("status", result);
     if (continuation === undefined)

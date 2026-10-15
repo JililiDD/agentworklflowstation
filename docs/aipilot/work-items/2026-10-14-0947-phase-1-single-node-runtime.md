@@ -256,8 +256,8 @@ Done when: 所有任务的 Verify 通过。真实模型的交互式运行完成�
 ### User Story 4: 命令节点与 API 重试   (AC: AC-11, AC-13, AC-14, AC-16)
 Touches: `packages/runner/src`、`tools/run-node.ts`
 Tests: fast
-- [ ] Task 4.1: 实现命令节点运行：在指定目录执行命令，把日志和退出码写成产物，按设置判定非零退出码。子进程的环境变量中去掉模型凭证。 — Verify: 单元测试断言：非零退出码在不允许时判为失败，在允许时判为成功并保存退出码（AC-13、AC-14）。设置一个假的密钥，让命令打印环境变量，断言日志中找不到这个密钥（AC-16）。
-- [ ] Task 4.2: 在适配器边界实现退避重试：只对限流和超时重试，最多 3 次，间隔 2、4、8 秒，加 ±20% 抖动。每次重试记为事件。 — Verify: 单元测试使用可注入的计时器。假适配器连续两次返回限流后成功：断言最终成功，并有两条重试事件。遇到其他错误：断言立即失败（AC-11）。
+- [x] Task 4.1: 实现命令节点运行：在指定目录执行命令，把日志和退出码写成产物，按设置判定非零退出码。子进程的环境变量中去掉模型凭证。 — Verify: 单元测试断言：非零退出码在不允许时判为失败，在允许时判为成功并保存退出码（AC-13、AC-14）。设置一个假的密钥，让命令打印环境变量，断言日志中找不到这个密钥（AC-16）。
+- [x] Task 4.2: 在适配器边界实现退避重试：只对限流和超时重试，最多 3 次，间隔 2、4、8 秒，加 ±20% 抖动。每次重试记为事件。 — Verify: 单元测试使用可注入的计时器。假适配器连续两次返回限流后成功：断言最终成功，并有两条重试事件。遇到其他错误：断言立即失败（AC-11）。
 Done when: 所有任务的 Verify 通过。开发脚本能运行一个命令节点并写出日志和退出码。快速档通过。
 
 ### Reuse Notes
@@ -365,3 +365,30 @@ Start: 3407ae0. Commit policy: auto.
 - **Evidence:** 起始 ref `96befb6`。快速档 `npm run typecheck && npm run lint && npm test` 通过，27 tests passed；`npm run build -w @aipilotagent/runner` 通过。`git diff --check` 通过。所有 pi SDK 包引用仍只在 `pi-session.ts`。
 - **Review:** 主代理自审；`clean-context result unavailable`。范围：runner 会话生命周期、工具注册、fake adapter、CLI 和新增测试。初稿的 lint 警告及失败命令已修正并重跑；审查发现事件原样保存自由文本答案的泄漏风险，改为只记答复状态/选项 ID，并重跑原验证、快速档及真实问答。未调用子代理（当前用户未授权委派）。
 - **Notes:** 真实问答仅验证一次提问和一次追加；P6 的等待几分钟仍未实际验证。保留 Story 2 记载的凭证隔离与文件读取风险。下一单位：User Story 4。
+
+### Task 4.1 — 2026-10-15
+
+- **Changes:** 新增 `command-node.ts`，用 `child_process.spawn` 在 workDir 运行命令。把 stdout、stderr、退出码分别写入 out/；根据 allowNonZeroExit 判定状态。子进程只继承最少的普通环境变量，不继承 API key、token 等模型凭证。单个日志超过 4 MiB 时中止命令并判失败；不加载 pi 会话。
+- **Tests:** 允许／不允许非零退出码的测试验证状态与产物；子进程打印全部环境变量时测试假凭证未流入日志；另测符号链接产物拒绝及过大日志有界失败。已有 agent 测试不变。
+- **Evidence:** `npm test` 中 command-node 5 项测试全部通过。CLI 真实命令输出目录 `/tmp/story4-out-CZlaad`：`status=succeeded`，stdout=RUN_OK、stderr=WARN、exitCode=0；stdout.log、stderr.log、exit-code.json 均存在。
+
+### Task 4.2 — 2026-10-15
+
+- **Changes:** 新增 `retry.ts`，在会话 prompt 边界分类模型 API 限流和超时，最多 3 次重试，2／4／8 秒加 ±20% 抖动；每次安排退避时记 retry 事件。pi 内置重试继续保持关闭。真实 pi 失败消息在 `pi-session.ts` 转为 ModelApiError，其他错误立即失败。
+- **Tests:** 注入假时钟：两次 429 后成功，检查同一会话、2／4 秒与两条 retry 事件；四次超时查 2／4／8 秒与上限；普通错误、配额耗尽、取消和抖动边界都可区分。
+- **Evidence:** `npm test` 中 retry 5 项测试全部通过。首次 Node strip-types 运行因构造函数参数属性报错；改为显式字段后原测试、快速档和完整档通过。没有制造真实 HTTP 429。
+
+### User Story 4 — 2026-10-15
+
+- **Changes:** 完成单个命令节点、CLI 命令路径和模型 API 退避重试。保留 Story 2/3 的节点运行能力。
+- **Evidence:** 起始 ref `764e9a6`。快速档 `npm run typecheck && npm run lint && npm test` 通过，37 tests passed。CLI 单命令运行成功并产生日志及退出码。
+- **Review:** 主代理自审；`clean-context result unavailable`。范围：命令执行、凭证环境过滤、重试分类／退避、CLI 和单测。审查发现参数属性不支持 strip-types，修复后重新验证；发现命令输出路径可指向符号链接，增加拒绝检查和回归测试；发现过大日志杀死 shell 后可能留下子进程，改为 POSIX 进程组终止并补测试。无待处理 P0–P2 代码缺陷。未调用子代理（当前用户未授权委派）。
+- **Notes:** 命令节点不是 OS 沙箱；同一用户仍可经文件系统读到本机凭证。真实 HTTP 429 未强制制造；整回合重试可能重放此前的工具调用。已在完成记录列为剩余风险。
+
+### Completion — 2026-10-15
+
+- **Exit Criteria evidence:** `npm run build -w @aipilotagent/runner && npm test -w @aipilotagent/runner && npm run typecheck && npm run lint` 新运行通过，37 tests passed；`git diff --check` 通过。AC-3 到 AC-16 的相关自动化测试见上述各单位；AC-1、AC-2 的两家模型、AC-7 和 AC-10 的交互问答及会话继续均有真实记录。最新复查：`anthropic/claude-haiku-5-5` 在 `/tmp/phase1-final-agent-out-ztu60c`、`codexJ/gpt-6-luna` 在 `/tmp/phase1-final-agent-out-HaZepB` 均 status=succeeded 且 out/result.txt 为 OK。交互运行 `/tmp/phase1-final-interactive-out-khdc6x` 的问答与继续均 succeeded，最终文件为 FINAL；事件有 question、answer、5 条 model、3 条 tool。`rg -i 'novel|chapter|story|review' packages/runner/src` 无结果。`aipilot` 仅匹配既有包名常量及既有占位测试，是产品包标识，不是领域流程逻辑。
+- **Review:** 最终全 work-item 自审；`clean-context result unavailable`。检查脚手架、StepRunner 边界、真实及 fake 会话、skill、事件和费用、交互继续、命令、重试、各 AC 证据与完整档。没有未修复的 P0–P2 代码发现；字面 AC-17 搜索匹配包名常量是记录在下方的非领域例外。安全性和真实 429 验证的边界列入剩余风险。
+- **Required setup:** Node 26 的 strip-types、全局和项目 pi SDK 1.3.0；pi 已登录 Anthropic 与 codexJ；Codex 运行时从本机 `~/.pi/agent/extensions/codex-accounts/index.ts` 加载扩展。`tools/run-node.ts --definition <JSON> --output <目录>`；agent 可加 `--continue <指令>`。
+- **QA checklist:** 用两家提供方各运行 agent，查看 task.md、events.jsonl 和 out/；用交互式节点回答编号选项，再追加修正指令；用命令节点检查 stdout.log、stderr.log 和 exit-code.json；用假时钟执行自动化重试测试。
+- **Remaining Risks:** 凭证隔离只在 ModelRuntime 和子进程环境生效，不是文件沙箱；命令可用绝对路径读本机文件。OAuth 刷新只在会话内存，不写回凭证文件。Codex 模型目录单价为 0，费用记 unknown。P6 只验证短时等待，未验证数分钟；P8 未制造真实 429。整回合重试可能重复工具副作用。命令日志单流上限 4 MiB，超过后判失败并保存截断部分。AC-17 的字面 grep 会匹配 `@aipilotagent/runner` 包名，但语义审查无领域逻辑。

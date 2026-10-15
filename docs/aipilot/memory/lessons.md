@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-10-15 Node strip-types 的语法边界
+
+- Node 26 的 `--experimental-strip-types` 不支持 TypeScript 构造函数参数属性。TypeScript 类型检查可以通过，但运行测试和开发脚本时会报 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`。需要显式声明字段，在构造函数体中赋值。
+- Phase 1 的命令节点只过滤子进程的环境变量，不能阻止同一用户的子进程通过文件路径读取凭证。真正的文件隔离留到工作区或沙箱阶段。
+
 ## 2026-10-15 pi 1.3.0 的凭证隔离与刷新
 
 - `ModelRuntime.create({ credentials })` 可接收按提供方过滤的 CredentialStore，`readStoredCredential(provider)` 可只返回所选凭证。pi SDK 未在包公共入口导出可持久化的 `AuthStorage` 实现。

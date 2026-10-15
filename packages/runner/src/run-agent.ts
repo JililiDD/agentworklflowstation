@@ -1,7 +1,9 @@
 import { appendFile, lstat, mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { runCommandNode } from "./command-node.ts";
 import { usageWithCost } from "./cost.ts";
 import { splitModelRef } from "./load-definition.ts";
+import { promptWithRetry, type RetryClock, systemRetryClock } from "./retry.ts";
 import type { AgentSessionHandle, SessionAdapter } from "./session-adapter.ts";
 import { buildSkillPrompt, resolveSkills } from "./skills.ts";
 import type {
@@ -48,6 +50,7 @@ async function runTurn(
   active: ActiveAgent,
   instruction: string,
   context: StepContext,
+  clock: RetryClock,
 ): Promise<StepResult> {
   if (active.inFlight) throw new Error("agent session is already running");
   active.inFlight = true;
@@ -83,7 +86,13 @@ async function runTurn(
   };
   active.activate(context, emit);
   try {
-    await active.session.prompt(instruction, emit, context.signal);
+    await promptWithRetry(
+      active.session,
+      instruction,
+      emit,
+      context.signal,
+      clock,
+    );
     await writes;
     const outputs: Record<string, string> = {};
     for (const name of active.definition.outputs) {
@@ -108,7 +117,10 @@ async function runTurn(
   }
 }
 
-export function createAgentRunner(adapter: SessionAdapter): StepRunner {
+export function createAgentRunner(
+  adapter: SessionAdapter,
+  clock: RetryClock = systemRetryClock,
+): StepRunner {
   const agents = new Map<string, ActiveAgent>();
   return {
     async runAgent(
@@ -217,7 +229,7 @@ export function createAgentRunner(adapter: SessionAdapter): StepRunner {
         },
       };
       agents.set(context.outputDir, active);
-      return runTurn(active, taskText, context);
+      return runTurn(active, taskText, context, clock);
     },
     async continueAgent(
       instruction: string,
@@ -235,13 +247,13 @@ export function createAgentRunner(adapter: SessionAdapter): StepRunner {
         join(context.outputDir, "task.md"),
         `\n\n## Continuation\n\n${instruction}`,
       );
-      return runTurn(active, instruction, context);
+      return runTurn(active, instruction, context, clock);
     },
     async runCommand(
-      _definition: CommandNodeDefinition,
-      _context: StepContext,
+      definition: CommandNodeDefinition,
+      context: StepContext,
     ): Promise<StepResult> {
-      throw new Error("command nodes are not implemented");
+      return runCommandNode(definition, context);
     },
     async dispose(): Promise<void> {
       const sessions = [...agents.values()];

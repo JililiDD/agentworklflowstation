@@ -11,6 +11,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { isRateLimitOrTimeout, ModelApiError } from "./retry.ts";
 import type {
   AgentSessionHandle,
   CreateSessionOptions,
@@ -228,7 +229,21 @@ export function createPiSessionAdapter(): SessionAdapter {
           signal.addEventListener("abort", abort, { once: true });
           try {
             if (signal.aborted) throw new Error("node aborted");
-            await session.prompt(text);
+            try {
+              await session.prompt(text);
+            } catch (error) {
+              if (!isRateLimitOrTimeout(error)) throw error;
+              const details =
+                typeof error === "object" && error !== null
+                  ? (error as { status?: unknown; code?: unknown })
+                  : {};
+              throw new ModelApiError(
+                error instanceof Error ? error.message : String(error),
+                typeof details.status === "number" ? details.status : undefined,
+                typeof details.code === "string" ? details.code : undefined,
+                { cause: error },
+              );
+            }
             const last = [...session.messages]
               .reverse()
               .find((message) => message.role === "assistant");
@@ -236,7 +251,10 @@ export function createPiSessionAdapter(): SessionAdapter {
               last?.role === "assistant" &&
               (last.stopReason === "error" || last.stopReason === "aborted")
             ) {
-              throw new Error(last.errorMessage ?? `model ${last.stopReason}`);
+              if (last.stopReason === "error") {
+                throw new ModelApiError(last.errorMessage ?? "model API error");
+              }
+              throw new Error(last.errorMessage ?? "model aborted");
             }
           } finally {
             signal.removeEventListener("abort", abort);
