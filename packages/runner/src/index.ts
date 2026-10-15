@@ -4,6 +4,7 @@ export {
   loadNodeDefinition,
   readNodeDefinitionFile,
 } from "./load-definition.ts";
+export { createPiSessionAdapter } from "./pi-session.ts";
 export { createAgentRunner } from "./run-agent.ts";
 export { resolveSkills } from "./skills.ts";
 export type * from "./types.ts";

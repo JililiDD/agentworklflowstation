@@ -429,6 +429,19 @@ export async function loadWorkflow(
   if (!Number.isSafeInteger(maxParallel) || (maxParallel as number) < 1) {
     throw new WorkflowDefinitionError("maxParallel must be a positive integer");
   }
+  let budgetUsd: number | undefined;
+  if (data.budgetUsd !== undefined) {
+    if (
+      typeof data.budgetUsd !== "number" ||
+      !Number.isFinite(data.budgetUsd) ||
+      data.budgetUsd < 0
+    ) {
+      throw new WorkflowDefinitionError(
+        "budgetUsd must be a non-negative number",
+      );
+    }
+    budgetUsd = data.budgetUsd;
+  }
   const nodes = parseNodes(data.nodes);
   try {
     validateGraph(
@@ -446,5 +459,10 @@ export async function loadWorkflow(
       error instanceof Error ? error.message : String(error),
     );
   }
-  return { inputs, maxParallel: maxParallel as number, nodes };
+  return {
+    inputs,
+    maxParallel: maxParallel as number,
+    ...(budgetUsd === undefined ? {} : { budgetUsd }),
+    nodes,
+  };
 }

@@ -6,6 +6,7 @@ import type {
   StepEvent,
   StepResult,
   ThinkingLevel,
+  TokenUsage,
 } from "@aipilotagent/runner";
 
 export interface Condition {
@@ -55,6 +56,7 @@ export type WorkflowNode =
 export interface WorkflowDefinition {
   inputs: string[];
   maxParallel: number;
+  budgetUsd?: number;
   nodes: WorkflowNode[];
 }
 
@@ -63,7 +65,13 @@ export interface WorkflowCapabilities {
   models: Record<string, ThinkingLevel[]>;
 }
 
-export type WorkflowStatus = "succeeded" | "failed" | "aborted";
+export type WorkflowStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "aborted"
+  | "budget_exceeded";
 export type NodeState =
   | "pending"
   | "running"
@@ -99,6 +107,23 @@ export interface WorkflowCallbacks {
   ): Promise<{ approved: true } | { approved: false; feedback: string }>;
 }
 
+export class WorkflowFatalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowFatalError";
+  }
+}
+
+export interface WorkflowHooks {
+  onNodeStart?(path: string, node: WorkflowNode): Promise<void>;
+  onNodeResult?(
+    path: string,
+    node: WorkflowNode,
+    result: StepResult,
+  ): Promise<StepResult>;
+  onStepUsage?(path: string, usage: TokenUsage): void;
+}
+
 export interface WorkflowContext {
   workDir: string;
   outputDir: string;
@@ -107,4 +132,9 @@ export interface WorkflowContext {
   callbacks?: WorkflowCallbacks;
   /** Supplied by the trusted host, never read from the workflow file. */
   providerSecrets?: Record<string, string>;
+  hooks?: WorkflowHooks;
+  resume?: {
+    nodes: Record<string, { state: NodeState; result?: StepResult }>;
+  };
+  initialCost?: number;
 }

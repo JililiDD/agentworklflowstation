@@ -25,13 +25,13 @@
 - Enables: 第 3 阶段在验证过的状态模型上实现持久化和续跑。第 6 阶段复用校验逻辑。
 - Work-item: 2026-10-15-1811-phase-2-scheduling-core.md
 
-### Phase 3: 持久化、工作区与真实运行  [planned]
+### Phase 3: 持久化、工作区与真实运行  [merged]
 
 - Goal: 让运行在独立的 git worktree 上执行，状态写到磁盘，并支持中止、续跑和崩溃恢复。
 - Verifiable outcome: 开发脚本用真实模型，在一个示例 git 仓库上运行多节点工作流。运行中途杀掉进程，续跑后已成功的节点不重跑。只读节点的改动被撤销。可写节点生成检查点和 diff。费用超出预算时，运行停止。
 - Depends on: Phase 2
 - Enables: 第 4 阶段的服务有可靠的运行可以启动和控制。
-- Work-item:
+- Work-item: 2026-10-15-1917-phase-3-durable-workspace.md
 
 ### Phase 4: 本地服务  [planned]
 

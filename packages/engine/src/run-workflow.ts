@@ -1,6 +1,11 @@
 import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { StepContext, StepResult, StepRunner } from "@aipilotagent/runner";
+import type {
+  StepContext,
+  StepResult,
+  StepRunner,
+  TokenUsage,
+} from "@aipilotagent/runner";
 import type { TSchema } from "typebox";
 import { Check } from "typebox/value";
 import {
@@ -19,6 +24,7 @@ import type {
   WorkflowNode,
   WorkflowResult,
 } from "./types.ts";
+import { WorkflowFatalError } from "./types.ts";
 
 interface NodeOutcome {
   state: NodeState;
@@ -35,10 +41,51 @@ interface Execution {
   running: number;
   writing: boolean;
   waiters: Array<() => void>;
+  budgetExceeded: boolean;
+  unverifiableBudget: boolean;
+  totalCost: number;
+  costByNode: Map<string, number>;
+  budgetController: AbortController;
+  effectiveSignal: AbortSignal;
 }
 
 function signalError(): Error {
   return new Error("run aborted");
+}
+
+function trackUsage(
+  execution: Execution,
+  path: string,
+  usage: TokenUsage,
+  isFinal: boolean,
+): void {
+  execution.context.hooks?.onStepUsage?.(path, usage);
+  if (execution.workflow.budgetUsd === undefined) return;
+  if (execution.budgetExceeded || execution.unverifiableBudget) return;
+  if (usage.costUsd === undefined) {
+    if (usage.inputTokens > 0 || usage.outputTokens > 0) {
+      execution.unverifiableBudget = true;
+      execution.stopped = true;
+      execution.budgetController.abort(
+        new Error("cannot verify budget: model catalog has no pricing rates"),
+      );
+    }
+    return;
+  }
+  const prior = execution.costByNode.get(path) ?? 0;
+  if (isFinal) {
+    const delta = Math.max(0, usage.costUsd - prior);
+    execution.totalCost += delta;
+    execution.costByNode.set(path, usage.costUsd);
+  } else {
+    execution.totalCost += usage.costUsd;
+    execution.costByNode.set(path, prior + usage.costUsd);
+  }
+  if (execution.totalCost > execution.workflow.budgetUsd) {
+    execution.budgetExceeded = true;
+    execution.stopped = true;
+    execution.budgetController.abort(new Error("budget exceeded"));
+  }
 }
 
 async function interruptible<T>(
@@ -61,7 +108,14 @@ async function acquire(
   canStart: () => boolean,
 ): Promise<() => void> {
   while (true) {
-    if (execution.context.signal.aborted) throw signalError();
+    if (execution.effectiveSignal.aborted) {
+      if (execution.budgetExceeded) throw new Error("budget exceeded");
+      if (execution.unverifiableBudget)
+        throw new Error(
+          "cannot verify budget: model catalog has no pricing rates",
+        );
+      throw signalError();
+    }
     if (!canStart()) throw new Error("run stopped after failure");
     if (
       execution.running < execution.workflow.maxParallel &&
@@ -77,7 +131,7 @@ async function acquire(
     }
     await interruptible(
       new Promise<void>((resolve) => execution.waiters.push(resolve)),
-      execution.context.signal,
+      execution.effectiveSignal,
     );
   }
 }
@@ -111,7 +165,7 @@ async function approval(
     throw new Error(`approval callback required: ${request.path}`);
   const answer = await interruptible(
     execution.context.callbacks.approve(request),
-    execution.context.signal,
+    execution.effectiveSignal,
   );
   if (!answer.approved && !answer.feedback?.trim()) {
     throw new Error("rejection requires feedback");
@@ -173,6 +227,9 @@ async function executeLeaf(
 ): Promise<StepResult> {
   const release = await acquire(execution, node.writable ?? false, canStart);
   emit(execution, path, "running");
+  if (execution.context.hooks?.onNodeStart) {
+    await execution.context.hooks.onNodeStart(path, node);
+  }
   try {
     const directory = join(
       execution.context.outputDir,
@@ -184,10 +241,14 @@ async function executeLeaf(
     const stepContext: StepContext = {
       workDir: execution.context.workDir,
       outputDir: directory,
-      signal: execution.context.signal,
+      signal: execution.effectiveSignal,
       callbacks: {
-        onEvent: (event) =>
-          execution.context.callbacks?.onStepEvent?.(path, event),
+        onEvent: (event) => {
+          execution.context.callbacks?.onStepEvent?.(path, event);
+          if (event.usage) {
+            trackUsage(execution, path, event.usage, false);
+          }
+        },
         ...(ask === undefined
           ? {}
           : { ask: (question) => ask(path, question) }),
@@ -197,10 +258,13 @@ async function executeLeaf(
         : { feedback: prior ?? scope.feedback }),
     };
     if (node.kind === "command") {
-      const result = await execution.runner.runCommand(
+      let result = await execution.runner.runCommand(
         node.definition,
         stepContext,
       );
+      if (execution.context.hooks?.onNodeResult) {
+        result = await execution.context.hooks.onNodeResult(path, node, result);
+      }
       if (result.status === "failed") markFailed();
       return result;
     }
@@ -230,7 +294,7 @@ async function executeLeaf(
     let problem = await validateOutputs(node, result);
     for (
       let repair = 0;
-      problem !== undefined && repair < 2 && !execution.context.signal.aborted;
+      problem !== undefined && repair < 2 && !execution.effectiveSignal.aborted;
       repair++
     ) {
       if (
@@ -246,14 +310,37 @@ async function executeLeaf(
       );
       problem = await validateOutputs(node, result);
     }
-    const finalResult: StepResult =
+    let finalResult: StepResult =
       problem === undefined
         ? result
         : { ...result, status: "failed", error: problem };
+    if (finalResult.usage) {
+      trackUsage(execution, path, finalResult.usage, true);
+    }
+    if (execution.budgetExceeded) {
+      finalResult = {
+        ...finalResult,
+        status: "failed",
+        error: "budget exceeded",
+      };
+    } else if (execution.unverifiableBudget) {
+      finalResult = {
+        ...finalResult,
+        status: "failed",
+        error: "cannot verify budget: model catalog has no pricing rates",
+      };
+    }
+    if (execution.context.hooks?.onNodeResult) {
+      finalResult = await execution.context.hooks.onNodeResult(
+        path,
+        node,
+        finalResult,
+      );
+    }
     if (finalResult.status === "failed") markFailed();
     return finalResult;
   } catch (error) {
-    if (!execution.context.signal.aborted) markFailed();
+    if (!execution.effectiveSignal.aborted) markFailed();
     throw error;
   } finally {
     release();
@@ -289,7 +376,7 @@ async function executeGroup(
     path,
     `attempt-${attempt}`,
   );
-  while (!execution.context.signal.aborted) {
+  while (!execution.effectiveSignal.aborted) {
     round++;
     const current = await runGraph(
       execution,
@@ -338,7 +425,8 @@ async function executeForeach(
   if (!Array.isArray(items)) return failure("foreach source is not an array");
   const entries: unknown[] = [];
   for (let index = 0; index < items.length; index++) {
-    if (execution.context.signal.aborted) return failure("foreach interrupted");
+    if (execution.effectiveSignal.aborted)
+      return failure("foreach interrupted");
     const current = await runGraph(
       execution,
       node.nodes,
@@ -376,10 +464,10 @@ async function executeNode(
     }
     let attempt = 0;
     let prior: { text: string; outputs: Record<string, string> } | undefined;
-    while (!execution.context.signal.aborted) {
+    while (!execution.effectiveSignal.aborted) {
       if (node.kind === "group" || node.kind === "foreach")
         emit(execution, path, "running");
-      const result =
+      let result =
         node.kind === "agent" || node.kind === "command"
           ? await executeLeaf(
               execution,
@@ -407,10 +495,16 @@ async function executeNode(
                 attempt,
               );
       if (result.status === "failed") {
-        if (execution.context.signal.aborted) break;
+        if (execution.effectiveSignal.aborted) break;
         markFailed();
         emit(execution, path, "failed", result);
         return { state: "failed", result };
+      }
+      if (
+        execution.context.hooks?.onNodeResult &&
+        (node.kind === "group" || node.kind === "foreach")
+      ) {
+        result = await execution.context.hooks.onNodeResult(path, node, result);
       }
       if (!node.approval) {
         emit(execution, path, "succeeded", result);
@@ -430,13 +524,30 @@ async function executeNode(
       attempt++;
     }
   } catch (error) {
+    if (error instanceof WorkflowFatalError) {
+      throw error;
+    }
     if (
       error instanceof Error &&
       error.message === "run stopped after failure"
     ) {
       return { state: "pending" };
     }
-    if (!execution.context.signal.aborted) {
+    if (execution.budgetExceeded) {
+      markFailed();
+      const result = failure("budget exceeded");
+      emit(execution, path, "failed", result);
+      return { state: "failed", result };
+    }
+    if (execution.unverifiableBudget) {
+      markFailed();
+      const result = failure(
+        "cannot verify budget: model catalog has no pricing rates",
+      );
+      emit(execution, path, "failed", result);
+      return { state: "failed", result };
+    }
+    if (!execution.effectiveSignal.aborted) {
       markFailed();
       const result = failure(
         error instanceof Error ? error.message : String(error),
@@ -471,7 +582,7 @@ async function runGraph(
   while (pending.size > 0 || active.size > 0) {
     let progressed = false;
     if (
-      !execution.context.signal.aborted &&
+      !execution.effectiveSignal.aborted &&
       (isTopLevel ? !execution.stopped : !graphFailed)
     ) {
       for (const [id, node] of pending) {
@@ -497,9 +608,18 @@ async function runGraph(
           )
         )
           continue;
+        const path = `${prefix}/${id}`.replace(/^\//, "");
+        const resumed = execution.context.resume?.nodes[path];
+        if (resumed?.state === "succeeded" && resumed.result) {
+          pending.delete(id);
+          progressed = true;
+          emit(execution, path, "succeeded", resumed.result);
+          settled.set(id, { state: "succeeded", result: resumed.result });
+          files.set(id, resumed.result.outputs);
+          continue;
+        }
         pending.delete(id);
         progressed = true;
-        const path = `${prefix}/${id}`.replace(/^\//, "");
         const visible = new Map([...scope.nodes, ...files]);
         const promise = executeNode(
           execution,
@@ -527,7 +647,7 @@ async function runGraph(
     }
     if (active.size === 0) {
       if (progressed) continue;
-      if (!execution.context.signal.aborted && pending.size > 0) {
+      if (!execution.effectiveSignal.aborted && pending.size > 0) {
         if (isTopLevel) execution.stopped = true;
         else graphFailed = true;
       }
@@ -537,7 +657,7 @@ async function runGraph(
   }
   await Promise.all(active.values());
   if (
-    execution.context.signal.aborted ||
+    execution.effectiveSignal.aborted ||
     (isTopLevel ? execution.stopped : graphFailed) ||
     pending.size > 0
   )
@@ -554,16 +674,33 @@ export async function runWorkflow(
     if (typeof context.inputs[input] !== "string")
       throw new Error(`missing workflow input: ${input}`);
   }
+  const budgetController = new AbortController();
+  const effectiveSignal = AbortSignal.any([
+    context.signal,
+    budgetController.signal,
+  ]);
+  const initialCost = context.initialCost ?? 0;
+  const budgetExceeded =
+    workflow.budgetUsd !== undefined && initialCost > workflow.budgetUsd;
+  if (budgetExceeded) {
+    budgetController.abort(new Error("budget exceeded"));
+  }
   const execution: Execution = {
     runner,
     context,
     workflow,
     nodes: {},
     events: [],
-    stopped: false,
+    stopped: budgetExceeded,
     running: 0,
     writing: false,
     waiters: [],
+    budgetExceeded,
+    unverifiableBudget: false,
+    totalCost: initialCost,
+    costByNode: new Map(),
+    budgetController,
+    effectiveSignal,
   };
   await mkdir(context.outputDir, { recursive: true });
   const scope: ReferenceScope = {
@@ -573,11 +710,15 @@ export async function runWorkflow(
   };
   await runGraph(execution, workflow.nodes, "", scope);
   return {
-    status: context.signal.aborted
-      ? "aborted"
-      : execution.stopped
+    status: execution.budgetExceeded
+      ? "budget_exceeded"
+      : execution.unverifiableBudget
         ? "failed"
-        : "succeeded",
+        : context.signal.aborted
+          ? "aborted"
+          : execution.stopped
+            ? "failed"
+            : "succeeded",
     nodes: execution.nodes,
     events: execution.events,
   };
