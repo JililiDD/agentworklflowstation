@@ -87,6 +87,8 @@ export interface StepContext {
   workDir: string;
   signal: AbortSignal;
   callbacks: StepCallbacks;
+  /** Test seam for AC-16. Real runs omit this and load one provider from pi auth. */
+  providerSecret?: string;
 }
 
 export interface StepResult {

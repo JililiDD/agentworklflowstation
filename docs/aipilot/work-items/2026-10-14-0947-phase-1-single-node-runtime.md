@@ -236,13 +236,13 @@ Done when: 结论表覆盖 P1 到 P11，每个前提都成立，或者已有记�
 ### User Story 2: 运行单个 agent 节点   (AC: AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-9, AC-12, AC-15, AC-16, AC-17)
 Touches: `packages/runner/src`、`tools/run-node.ts`
 Tests: fast
-- [ ] Task 2.1: 定义节点定义的类型，并实现 JSON 节点定义的加载和校验。 — Verify: 单元测试覆盖合法定义、缺少模型、未知的 thinking level 和未知的节点类型。规则改变时，测试要失败。
-- [ ] Task 2.2: 实现 skill 解析和注入：从来源目录找到所选 skill，读取 SKILL.md，把内容和 skill 目录的绝对路径写入系统提示。 — Verify: 单元测试用临时的 skill 来源目录，其中有一个引用兄弟 skill 文件的 SKILL.md。断言提示中包含 SKILL.md 正文和绝对路径。找不到 skill 时，断言报错（AC-3、AC-4）。
-- [ ] Task 2.3: 实现 pi 会话适配器，所有 pi 调用都放在这里。再实现假的适配器，供测试使用。 — Verify: `npm run typecheck` 通过。在 runner 包中搜索 pi 包的引用，只出现在适配器文件中。
-- [ ] Task 2.4: 实现 agent 节点运行：每次新建会话；设置模型和 thinking level；注入 skill 和附加指令；写出 `task.md`；把模型调用和工具调用追加到 `events.jsonl`；返回状态、产物路径和用量。 — Verify: 用假适配器的单元测试断言 `task.md` 的内容、`events.jsonl` 的事件类型和用量字段、两次运行使用不同的会话，以及返回结果（AC-5、AC-6、AC-9、AC-12）。
-- [ ] Task 2.5: 按 pi 的模型元数据计算每次模型调用的费用。 — Verify: 单元测试给定用量和单价，断言事件中的费用正确。缺少单价时，事件标明费用未知，不能写成 0。
-- [ ] Task 2.6: 实现凭证保护：只给会话提供节点模型所属提供方的凭证；事件和日志不包含凭证。 — Verify: 单元测试设置一个假的密钥，运行假会话，然后检查所有输出文件中都找不到它（AC-15）。断言适配器只收到一个提供方的凭证（AC-16）。
-- [ ] Task 2.7: 写开发脚本 `tools/run-node.ts`：读取节点定义和输出目录，运行节点，在终端打印事件摘要。 — Verify: 用两家提供方最便宜的模型各运行一次真实节点。在 Execution Record 中引用命令和关键输出，并确认 `task.md`、`events.jsonl` 和 `out/` 中的产物都存在（AC-1、AC-2）。
+- [x] Task 2.1: 定义节点定义的类型，并实现 JSON 节点定义的加载和校验。 — Verify: 单元测试覆盖合法定义、缺少模型、未知的 thinking level 和未知的节点类型。规则改变时，测试要失败。
+- [x] Task 2.2: 实现 skill 解析和注入：从来源目录找到所选 skill，读取 SKILL.md，把内容和 skill 目录的绝对路径写入系统提示。 — Verify: 单元测试用临时的 skill 来源目录，其中有一个引用兄弟 skill 文件的 SKILL.md。断言提示中包含 SKILL.md 正文和绝对路径。找不到 skill 时，断言报错（AC-3、AC-4）。
+- [x] Task 2.3: 实现 pi 会话适配器，所有 pi 调用都放在这里。再实现假的适配器，供测试使用。 — Verify: `npm run typecheck` 通过。在 runner 包中搜索 pi 包的引用，只出现在适配器文件中。
+- [x] Task 2.4: 实现 agent 节点运行：每次新建会话；设置模型和 thinking level；注入 skill 和附加指令；写出 `task.md`；把模型调用和工具调用追加到 `events.jsonl`；返回状态、产物路径和用量。 — Verify: 用假适配器的单元测试断言 `task.md` 的内容、`events.jsonl` 的事件类型和用量字段、两次运行使用不同的会话，以及返回结果（AC-5、AC-6、AC-9、AC-12）。
+- [x] Task 2.5: 按 pi 的模型元数据计算每次模型调用的费用。 — Verify: 单元测试给定用量和单价，断言事件中的费用正确。缺少单价时，事件标明费用未知，不能写成 0。
+- [x] Task 2.6: 实现凭证保护：只给会话提供节点模型所属提供方的凭证；事件和日志不包含凭证。 — Verify: 单元测试设置一个假的密钥，运行假会话，然后检查所有输出文件中都找不到它（AC-15）。断言适配器只收到一个提供方的凭证（AC-16）。
+- [x] Task 2.7: 写开发脚本 `tools/run-node.ts`：读取节点定义和输出目录，运行节点，在终端打印事件摘要。 — Verify: 用两家提供方最便宜的模型各运行一次真实节点。在 Execution Record 中引用命令和关键输出，并确认 `task.md`、`events.jsonl` 和 `out/` 中的产物都存在（AC-1、AC-2）。
 Done when: 所有任务的 Verify 通过。两家提供方的真实运行都写出了事件和产物，事件中有 token 用量和费用。快速档通过。
 
 ### User Story 3: 交互式提问与继续会话   (AC: AC-7, AC-8, AC-10)
@@ -331,3 +331,12 @@ Start: 3407ae0. Commit policy: auto.
 - **Changes:** 完成脚手架和 pi 能力验证。
 - **Evidence:** 快速档：`npm run typecheck && npm run lint && npm test` 通过。占位测试 `runner package loads` 通过。
 - **Review:** 主代理审查。`clean-context result unavailable`。范围：workspace 脚手架、`types.ts`、throwaway spike。无 P1/P2 缺陷。未把凭证写入仓库。
+
+### User Story 2 — 2026-10-15
+
+- **Changes:** Task 2.1 用 `load-definition.ts` 校验 JSON 模型、thinking、节点类型和 skill 来源。Task 2.2 手动注入所选 SKILL.md 正文与绝对目录；拒绝目录逃逸。Task 2.3 把 pi SDK 调用集中到 `pi-session.ts`，用假适配器做自动化测试；真实运行只向 ModelRuntime 注入本节点提供方的凭证。Task 2.4 实现独立新会话、task.md、逐条追加 events.jsonl、实际文件检查与用量累计。Task 2.5 按模型目录单价计算费用，缺价（含 Codex 零单价）显示 unknown。Task 2.6 测试假密钥不出现在产物或事件中，保护错误消息中的已知密钥。Task 2.7 写 CLI，真实运行 Anthropic 和 Codex。
+- **Tests:** 加载器的合法、缺模型、未知 thinking/类型测试固定校验规则；skill 测试固定只选中目标及兄弟目录路径；fake session 测试固定隔离、事件顺序、费用累计、缺产物失败、文件路径边界和假凭证泄漏；凭证存储单测固定提供方过滤。测试不调用真实模型。
+- **Evidence:** `npm run typecheck && npm run lint && npm test` 通过，18 tests passed；`npm run build -w @aipilotagent/runner` 通过。`rg '@earendil-works/pi-coding-agent' packages/runner/src` 只显示 `pi-session.ts`。`rg -i 'novel|chapter|story|review' packages/runner/src` 无结果；`aipilot` 仅出现在既有包名常量及既有占位测试，不是工作流领域逻辑。
+- **Evidence:** 最终真实运行：`node --experimental-strip-types tools/run-node.ts --definition <临时JSON> --output <临时目录>`。Anthropic `anthropic/claude-haiku-5-5` 输出目录 `/tmp/story2-final-out-cTXEMJ`，status=succeeded、2 条 model + 1 条 tool、token 字段齐全、首条费用 $0.00006454。Codex `codexJ/gpt-6-luna` 输出目录 `/tmp/story2-final-out-Wovnqz`，status=succeeded、2 条 model + 1 条 tool、token 字段齐全、费用 unknown（目录单价全为 0）。两次运行都确认 task.md、events.jsonl、out/result.txt 存在且 result.txt 内容为 OK。
+- **Review:** 主代理自审；`clean-context result unavailable`。范围：Story 2 新增源码/测试/CLI、runner 类型和工具配置。发现并修复了初稿的凭证未隔离、事件只在回合结束后写入、多次调用用量未累计、缺产物仍成功、输出路径可逃逸及 Codex 模型定价查询在扩展加载前执行的问题；随后重跑原单测、快速档和两家真实模型，均通过。未调用子代理（当前用户未授权委派）。
+- **Notes:** 延后交互提问、继续会话和退避重试到 Story 3/4；命令节点暂为未实现。凭证隔离仅限 pi ModelRuntime，OAuth 刷新目前只在内存；真实读工具尚无 OS 沙箱，不能把假密钥单测解释为对任意恶意模型输出的防泄漏证明。详见 `memory/lessons.md`。下一单位：User Story 3。

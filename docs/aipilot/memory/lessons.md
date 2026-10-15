@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-10-15 pi 1.3.0 的凭证隔离与刷新
+
+- `ModelRuntime.create({ credentials })` 可接收按提供方过滤的 CredentialStore，`readStoredCredential(provider)` 可只返回所选凭证。pi SDK 未在包公共入口导出可持久化的 `AuthStorage` 实现。
+- Phase 1 runner 用内存中的单提供方 CredentialStore 隔离会话；OAuth 刷新只更新本次会话的内存副本。如果提供方轮换 refresh token，下一次从原 auth.json 读取的旧 token 可能失效。后续凭证持久化方案需要保留跨进程串行写入语义，不能直接覆盖 auth.json。
+- 这个隔离只限制 pi ModelRuntime 获得的凭证，并不是 OS 沙箱。真实模型仍有文件读取能力，不能据此保证它无法读取工作目录外的敏感文件；后续安全边界需要单独验证。
+
 ## 2026-10-15 pi 1.3.0 SDK 能力
 
 - SDK 默认不加载 `~/.pi/agent/extensions`。ChatGPT 多账号扩展 `codex-accounts` 必须通过 `DefaultResourceLoader.additionalExtensionPaths` 加载，否则只有 `openai-codex` 模型，没有 `codexJ` 凭证。
