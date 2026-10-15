@@ -1,7 +1,7 @@
 ---
 created: 2026-10-14 09:47
 scope: New Product
-status: active
+status: merged
 phase: 1
 ---
 

@@ -9,7 +9,7 @@
 
 ## Phases
 
-### Phase 1: 单节点运行时  [in-progress]
+### Phase 1: 单节点运行时  [merged]
 
 - Goal: 验证 pi 的关键能力，让 runner 层能独立运行单个 agent 节点和单个命令节点。
 - Verifiable outcome: 开发脚本用指定的模型、thinking level 和 skill 运行一个 agent 节点，并写出 task.md、events.jsonl 和产物。节点能在终端中途提问，并收到回答。命令节点写出日志和退出码。Claude 订阅和 ChatGPT 订阅的模型各跑通一次。
