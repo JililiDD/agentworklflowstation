@@ -116,4 +116,6 @@ export interface StepRunner {
    * Premise P5.
    */
   continueAgent(instruction: string, context: StepContext): Promise<StepResult>;
+  /** Release sessions retained for possible continuation. The caller must close the runner. */
+  dispose(): Promise<void>;
 }

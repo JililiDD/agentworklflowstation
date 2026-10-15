@@ -1,4 +1,4 @@
-import type { StepEvent, ThinkingLevel } from "./types.ts";
+import type { Answer, Question, StepEvent, ThinkingLevel } from "./types.ts";
 
 export interface ProviderCredentials {
   provider: string;
@@ -10,9 +10,10 @@ export interface CreateSessionOptions {
   modelId: string;
   thinkingLevel: ThinkingLevel;
   systemPrompt: string;
+  /** Only interactive nodes provide this callback and receive the ask tool. */
+  ask?: (question: Question, signal?: AbortSignal) => Promise<Answer>;
   credentials: ProviderCredentials;
   workDir: string;
-  signal: AbortSignal;
 }
 
 export interface AgentSessionHandle {
@@ -21,7 +22,11 @@ export interface AgentSessionHandle {
   readonly rates:
     | { input: number; output: number; cacheRead: number; cacheWrite: number }
     | undefined;
-  prompt(text: string, onEvent: (event: StepEvent) => void): Promise<void>;
+  prompt(
+    text: string,
+    onEvent: (event: StepEvent) => void,
+    signal: AbortSignal,
+  ): Promise<void>;
   dispose(): Promise<void>;
 }
 

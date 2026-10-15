@@ -1,6 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -9,17 +10,48 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import type {
   AgentSessionHandle,
   CreateSessionOptions,
   SessionAdapter,
 } from "./session-adapter.ts";
-import type { StepEvent, TokenUsage } from "./types.ts";
+import type { Answer, Question, StepEvent, TokenUsage } from "./types.ts";
 
 const CODEX_ACCOUNTS = join(
   homedir(),
   ".pi/agent/extensions/codex-accounts/index.ts",
 );
+
+const questionParams = Type.Object({
+  prompt: Type.String({ minLength: 1 }),
+  options: Type.Array(
+    Type.Object({
+      id: Type.String({ minLength: 1 }),
+      label: Type.String({ minLength: 1 }),
+    }),
+  ),
+});
+
+async function askUntilAborted(
+  ask: (question: Question, signal?: AbortSignal) => Promise<Answer>,
+  question: Question,
+  signal: AbortSignal | undefined,
+): Promise<Answer> {
+  if (signal === undefined) return ask(question);
+  if (signal.aborted) throw new Error("question aborted");
+  let onAbort = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(new Error("question aborted"));
+  });
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    if (signal.aborted) throw new Error("question aborted");
+    return await Promise.race([ask(question, signal), aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
 
 type CredentialStore = NonNullable<
   NonNullable<Parameters<typeof ModelRuntime.create>[0]>["credentials"]
@@ -122,13 +154,34 @@ export function createPiSessionAdapter(): SessionAdapter {
           `model not found: ${options.modelProvider}/${options.modelId}`,
         );
       }
+      const ask = options.ask;
+      const askTool: ToolDefinition<typeof questionParams> = {
+        name: "ask_user",
+        label: "Ask User",
+        description:
+          "Ask the user a question with optional choices, then wait for their answer.",
+        parameters: questionParams,
+        executionMode: "sequential",
+        async execute(_callId, params, signal) {
+          if (signal?.aborted) throw new Error("question aborted");
+          if (ask === undefined)
+            throw new Error("asking is disabled for this node");
+          const answer = await askUntilAborted(ask, params, signal);
+          return {
+            content: [{ type: "text", text: JSON.stringify(answer) }],
+            details: {},
+          };
+        },
+      };
       const created = await createAgentSession({
         cwd: options.workDir,
         model,
         thinkingLevel: options.thinkingLevel,
         modelRuntime: runtime,
         resourceLoader: loader,
-        tools: ["read", "write"],
+        tools:
+          ask === undefined ? ["read", "write"] : ["read", "write", "ask_user"],
+        customTools: ask === undefined ? [] : [askTool],
         sessionManager: SessionManager.inMemory(options.workDir),
         settingsManager: SettingsManager.inMemory({
           retry: { enabled: false },
@@ -142,6 +195,7 @@ export function createPiSessionAdapter(): SessionAdapter {
         async prompt(
           text: string,
           onEvent: (event: StepEvent) => void,
+          signal: AbortSignal,
         ): Promise<void> {
           const unsubscribe = session.subscribe((event) => {
             if (event.type === "message_end") {
@@ -171,9 +225,9 @@ export function createPiSessionAdapter(): SessionAdapter {
           const abort = () => {
             void session.abort();
           };
-          options.signal.addEventListener("abort", abort, { once: true });
+          signal.addEventListener("abort", abort, { once: true });
           try {
-            if (options.signal.aborted) throw new Error("node aborted");
+            if (signal.aborted) throw new Error("node aborted");
             await session.prompt(text);
             const last = [...session.messages]
               .reverse()
@@ -185,7 +239,7 @@ export function createPiSessionAdapter(): SessionAdapter {
               throw new Error(last.errorMessage ?? `model ${last.stopReason}`);
             }
           } finally {
-            options.signal.removeEventListener("abort", abort);
+            signal.removeEventListener("abort", abort);
             unsubscribe();
           }
         },

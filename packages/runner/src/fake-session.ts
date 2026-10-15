@@ -5,28 +5,42 @@ import type {
   ProviderCredentials,
   SessionAdapter,
 } from "./session-adapter.ts";
-import type { StepEvent, TokenUsage } from "./types.ts";
+import type { Answer, Question, StepEvent, TokenUsage } from "./types.ts";
 
 export interface FakeSessionAdapter extends SessionAdapter {
   readonly receivedCredentials: ProviderCredentials[];
   readonly sessionIds: string[];
+  readonly disposedSessionIds: string[];
+  readonly askEnabled: boolean[];
+  readonly sentPrompts: Array<{ sessionId: string; text: string }>;
+  readonly answers: Answer[];
   rates: TokenRates | undefined;
   nextUsage: TokenUsage;
   nextEvents?: StepEvent[];
-  onPrompt?: (workDir: string) => Promise<void>;
+  nextQuestion?: Question;
+  onPrompt?: (workDir: string, text: string) => Promise<void>;
 }
 
 export function createFakeSessionAdapter(): FakeSessionAdapter {
   let nextId = 1;
   const receivedCredentials: ProviderCredentials[] = [];
   const sessionIds: string[] = [];
+  const disposedSessionIds: string[] = [];
+  const askEnabled: boolean[] = [];
+  const sentPrompts: Array<{ sessionId: string; text: string }> = [];
+  const answers: Answer[] = [];
   const adapter: FakeSessionAdapter = {
     receivedCredentials,
     sessionIds,
+    disposedSessionIds,
+    askEnabled,
+    sentPrompts,
+    answers,
     rates: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
     nextUsage: { inputTokens: 10, outputTokens: 4 },
     async createSession(options: CreateSessionOptions) {
       receivedCredentials.push(options.credentials);
+      askEnabled.push(options.ask !== undefined);
       const id = `fake-session-${nextId}`;
       nextId += 1;
       sessionIds.push(id);
@@ -36,9 +50,11 @@ export function createFakeSessionAdapter(): FakeSessionAdapter {
           return adapter.rates;
         },
         async prompt(
-          _text: string,
+          text: string,
           onEvent: (event: StepEvent) => void,
+          signal: AbortSignal,
         ): Promise<void> {
+          sentPrompts.push({ sessionId: id, text });
           for (const event of adapter.nextEvents ?? [
             {
               type: "model" as const,
@@ -49,9 +65,19 @@ export function createFakeSessionAdapter(): FakeSessionAdapter {
           ]) {
             onEvent(event);
           }
-          await adapter.onPrompt?.(options.workDir);
+          if (adapter.nextQuestion !== undefined && options.ask !== undefined) {
+            onEvent({
+              type: "tool",
+              at: new Date().toISOString(),
+              summary: "ask_user",
+            });
+            answers.push(await options.ask(adapter.nextQuestion, signal));
+          }
+          await adapter.onPrompt?.(options.workDir, text);
         },
-        async dispose() {},
+        async dispose() {
+          disposedSessionIds.push(id);
+        },
       };
       return handle;
     },

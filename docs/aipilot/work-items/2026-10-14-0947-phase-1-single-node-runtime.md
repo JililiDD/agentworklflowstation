@@ -248,9 +248,9 @@ Done when: 所有任务的 Verify 通过。两家提供方的真实运行都写�
 ### User Story 3: 交互式提问与继续会话   (AC: AC-7, AC-8, AC-10)
 Touches: `packages/runner/src`、`tools/run-node.ts`
 Tests: fast
-- [ ] Task 3.1: 只为交互式节点注册提问工具。工具把问题和选项交给调用方的提问回调，并把回答返回给会话。问题和回答都记为事件。 — Verify: 用假适配器的单元测试断言：交互式节点有提问工具，回答回到同一会话；非交互式节点没有这个工具（AC-7、AC-8）。
-- [ ] Task 3.2: 实现继续会话：节点结束后，调用方可以在同一会话中追加一条指令。 — Verify: 用假适配器的单元测试断言追加指令进入同一会话（AC-10）。
-- [ ] Task 3.3: 在开发脚本中实现终端问答：显示问题和编号选项，从标准输入读取回答。再加一个参数，运行结束后追加一条指令。 — Verify: 用一个便宜的真实模型运行一个交互式节点。在终端回答问题，再追加一条修正指令。在 Execution Record 中引用问答记录和事件（AC-7、AC-10）。
+- [x] Task 3.1: 只为交互式节点注册提问工具。工具把问题和选项交给调用方的提问回调，并把回答返回给会话。问题和回答都记为事件。 — Verify: 用假适配器的单元测试断言：交互式节点有提问工具，回答回到同一会话；非交互式节点没有这个工具（AC-7、AC-8）。
+- [x] Task 3.2: 实现继续会话：节点结束后，调用方可以在同一会话中追加一条指令。 — Verify: 用假适配器的单元测试断言追加指令进入同一会话（AC-10）。
+- [x] Task 3.3: 在开发脚本中实现终端问答：显示问题和编号选项，从标准输入读取回答。再加一个参数，运行结束后追加一条指令。 — Verify: 用一个便宜的真实模型运行一个交互式节点。在终端回答问题，再追加一条修正指令。在 Execution Record 中引用问答记录和事件（AC-7、AC-10）。
 Done when: 所有任务的 Verify 通过。真实模型的交互式运行完成了一次问答和一次追加指令。快速档通过。
 
 ### User Story 4: 命令节点与 API 重试   (AC: AC-11, AC-13, AC-14, AC-16)
@@ -340,3 +340,28 @@ Start: 3407ae0. Commit policy: auto.
 - **Evidence:** 最终真实运行：`node --experimental-strip-types tools/run-node.ts --definition <临时JSON> --output <临时目录>`。Anthropic `anthropic/claude-haiku-5-5` 输出目录 `/tmp/story2-final-out-cTXEMJ`，status=succeeded、2 条 model + 1 条 tool、token 字段齐全、首条费用 $0.00006454。Codex `codexJ/gpt-6-luna` 输出目录 `/tmp/story2-final-out-Wovnqz`，status=succeeded、2 条 model + 1 条 tool、token 字段齐全、费用 unknown（目录单价全为 0）。两次运行都确认 task.md、events.jsonl、out/result.txt 存在且 result.txt 内容为 OK。
 - **Review:** 主代理自审；`clean-context result unavailable`。范围：Story 2 新增源码/测试/CLI、runner 类型和工具配置。发现并修复了初稿的凭证未隔离、事件只在回合结束后写入、多次调用用量未累计、缺产物仍成功、输出路径可逃逸及 Codex 模型定价查询在扩展加载前执行的问题；随后重跑原单测、快速档和两家真实模型，均通过。未调用子代理（当前用户未授权委派）。
 - **Notes:** 延后交互提问、继续会话和退避重试到 Story 3/4；命令节点暂为未实现。凭证隔离仅限 pi ModelRuntime，OAuth 刷新目前只在内存；真实读工具尚无 OS 沙箱，不能把假密钥单测解释为对任意恶意模型输出的防泄漏证明。详见 `memory/lessons.md`。下一单位：User Story 3。
+
+### Task 3.1 — 2026-10-15
+
+- **Changes:** 在 `pi-session.ts` 用 pi SDK 的 `customTools` 注册 `ask_user`。只在交互式节点传入该工具与允许名单。runner 把问题送到调用方，回答送回工具；问题、选项 ID 和答复状态记为事件。不把自由文本答复写进事件。直接依赖 pi 所用的 `typebox` 1.3.27；不用另造 schema 工具。
+- **Tests:** fake adapter 检查交互节点可提问、非交互节点没有提问能力、回调返回相同会话、问答事件顺序、自由文本不泄漏及中止后不记录迟到答复。
+- **Evidence:** `npm test` 中交互、非交互、自由文本和中止相关测试通过。真实 Haiku 的 `ask_user` 调用完成问答；终端选择 BLUE，事件含 question 与 answer。
+
+### Task 3.2 — 2026-10-15
+
+- **Changes:** runner 按输出目录保留会话，`continueAgent` 向原会话发送追加指令，追加 task.md 和 events.jsonl，并在退出时通过 `dispose()` 释放会话。每回合的中止信号单独传到 pi。选择显式释放而不是在首回合结束即关闭会话；否则 AC-10 无法成立。多节点调度留在后续阶段。
+- **Tests:** fake adapter 固定同一 session ID、修正后的文件、追加指令和事件；初次失败后也能修正；交互继续使用本次调用方的回调；释放后不能继续。
+- **Evidence:** `npm test` 中所有 continuation 测试通过。真实 Haiku 的初次和追加回合均为 succeeded，最终 out/result.txt 为 FINAL。
+
+### Task 3.3 — 2026-10-15
+
+- **Changes:** `tools/run-node.ts` 接受 `--continue`；CLI 懒加载 readline，显示编号选项并读取答案；无选项时接受自由文本。CLI 结束时释放会话。
+- **Tests:** 终端选择编号、无选项自由文本的纯函数测试，验证显示内容与返回值。真实模型验收不是自动化测试。
+- **Evidence:** `printf '1\n' | timeout 120s node --experimental-strip-types tools/run-node.ts --definition <临时JSON> --output /tmp/story3-final-out-TSAJ30 --continue 'Use write to replace out/result.txt with exactly FINAL followed by a newline. Reply DONE.'`：`Question: Which word should the file contain?`，`1. BLUE`、`2. RED`，`answer selected option blue`，`status=succeeded`，`continuation-status=succeeded`。产物为 FINAL；JSONL 有 question=true、answer=true、model_events=5、tool_events=3；task.md 有 Continuation。
+
+### User Story 3 — 2026-10-15
+
+- **Changes:** 完成中途提问、回答回送原会话、节点结束后继续会话、终端问答与显式清理。
+- **Evidence:** 起始 ref `96befb6`。快速档 `npm run typecheck && npm run lint && npm test` 通过，27 tests passed；`npm run build -w @aipilotagent/runner` 通过。`git diff --check` 通过。所有 pi SDK 包引用仍只在 `pi-session.ts`。
+- **Review:** 主代理自审；`clean-context result unavailable`。范围：runner 会话生命周期、工具注册、fake adapter、CLI 和新增测试。初稿的 lint 警告及失败命令已修正并重跑；审查发现事件原样保存自由文本答案的泄漏风险，改为只记答复状态/选项 ID，并重跑原验证、快速档及真实问答。未调用子代理（当前用户未授权委派）。
+- **Notes:** 真实问答仅验证一次提问和一次追加；P6 的等待几分钟仍未实际验证。保留 Story 2 记载的凭证隔离与文件读取风险。下一单位：User Story 4。

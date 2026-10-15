@@ -1,12 +1,14 @@
-import { lstat, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { usageWithCost } from "./cost.ts";
 import { splitModelRef } from "./load-definition.ts";
-import type { SessionAdapter } from "./session-adapter.ts";
+import type { AgentSessionHandle, SessionAdapter } from "./session-adapter.ts";
 import { buildSkillPrompt, resolveSkills } from "./skills.ts";
 import type {
   AgentNodeDefinition,
+  Answer,
   CommandNodeDefinition,
+  Question,
   StepContext,
   StepEvent,
   StepResult,
@@ -14,27 +16,106 @@ import type {
   TokenUsage,
 } from "./types.ts";
 
+interface ActiveAgent {
+  definition: AgentNodeDefinition;
+  session: AgentSessionHandle;
+  workDir: string;
+  activate(context: StepContext, emit: (event: StepEvent) => void): void;
+  inFlight: boolean;
+}
+
 function emptyUsage(): TokenUsage {
   return { inputTokens: 0, outputTokens: 0 };
 }
 
-async function appendEvents(
-  outputDir: string,
-  events: StepEvent[],
-): Promise<void> {
-  if (events.length === 0) {
-    return;
+async function appendEvent(outputDir: string, event: StepEvent): Promise<void> {
+  await appendFile(
+    join(outputDir, "events.jsonl"),
+    `${JSON.stringify(event)}\n`,
+  );
+}
+
+function requireAsk(
+  context: StepContext,
+  definition: AgentNodeDefinition,
+): void {
+  if (definition.interactive && context.callbacks.ask === undefined) {
+    throw new Error("interactive node requires an ask callback");
   }
-  const lines = events.map((event) => JSON.stringify(event)).join("\n");
-  await writeFile(join(outputDir, "events.jsonl"), `${lines}\n`, { flag: "a" });
+}
+
+async function runTurn(
+  active: ActiveAgent,
+  instruction: string,
+  context: StepContext,
+): Promise<StepResult> {
+  if (active.inFlight) throw new Error("agent session is already running");
+  active.inFlight = true;
+  let usage = emptyUsage();
+  let writes = Promise.resolve();
+  const emit = (event: StepEvent) => {
+    const summary = context.providerSecret
+      ? event.summary.replaceAll(context.providerSecret, "[redacted]")
+      : event.summary;
+    const priced: StepEvent =
+      event.usage === undefined
+        ? { ...event, summary }
+        : {
+            ...event,
+            summary,
+            usage: usageWithCost(event.usage, active.session.rates),
+          };
+    if (priced.usage !== undefined) {
+      usage = {
+        inputTokens: usage.inputTokens + priced.usage.inputTokens,
+        outputTokens: usage.outputTokens + priced.usage.outputTokens,
+        cacheReadTokens:
+          (usage.cacheReadTokens ?? 0) + (priced.usage.cacheReadTokens ?? 0),
+        cacheWriteTokens:
+          (usage.cacheWriteTokens ?? 0) + (priced.usage.cacheWriteTokens ?? 0),
+        ...(priced.usage.costUsd === undefined
+          ? {}
+          : { costUsd: (usage.costUsd ?? 0) + priced.usage.costUsd }),
+      };
+    }
+    writes = writes.then(() => appendEvent(context.outputDir, priced));
+    context.callbacks.onEvent(priced);
+  };
+  active.activate(context, emit);
+  try {
+    await active.session.prompt(instruction, emit, context.signal);
+    await writes;
+    const outputs: Record<string, string> = {};
+    for (const name of active.definition.outputs) {
+      const file = join(context.outputDir, "out", name);
+      const info = await lstat(file);
+      if (!info.isFile())
+        throw new Error(`output is not a regular file: ${name}`);
+      outputs[name] = file;
+    }
+    return { status: "succeeded", outputs, usage };
+  } catch (error) {
+    await writes;
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const message = context.providerSecret
+      ? rawMessage.replaceAll(context.providerSecret, "[redacted]")
+      : rawMessage;
+    emit({ type: "error", at: new Date().toISOString(), summary: message });
+    await writes;
+    return { status: "failed", outputs: {}, usage, error: message };
+  } finally {
+    active.inFlight = false;
+  }
 }
 
 export function createAgentRunner(adapter: SessionAdapter): StepRunner {
+  const agents = new Map<string, ActiveAgent>();
   return {
     async runAgent(
       definition: AgentNodeDefinition,
       context: StepContext,
     ): Promise<StepResult> {
+      requireAsk(context, definition);
       const outDir = join(context.outputDir, "out");
       for (const name of definition.outputs) {
         if (
@@ -45,6 +126,12 @@ export function createAgentRunner(adapter: SessionAdapter): StepRunner {
         ) {
           throw new Error(`invalid output file name: ${name}`);
         }
+      }
+      const prior = agents.get(context.outputDir);
+      if (prior !== undefined) {
+        if (prior.inFlight) throw new Error("agent session is already running");
+        await prior.session.dispose();
+        agents.delete(context.outputDir);
       }
       await mkdir(outDir, { recursive: true });
       if (!(await lstat(outDir)).isDirectory()) {
@@ -62,76 +149,93 @@ export function createAgentRunner(adapter: SessionAdapter): StepRunner {
               definition.skillNames,
             )
           : [];
-      const skillPrompt = buildSkillPrompt(skills);
-      const taskParts = [definition.task];
-      if (definition.instructions !== undefined) {
-        taskParts.push(definition.instructions);
-      }
-      const taskText = taskParts.join("\n\n");
+      const taskText = [definition.task, definition.instructions]
+        .filter((part): part is string => part !== undefined)
+        .join("\n\n");
       await writeFile(join(context.outputDir, "task.md"), taskText);
-      const systemParts = [
+      const systemPrompt = [
         "Write declared outputs under the out/ directory.",
-        skillPrompt,
-      ].filter((part) => part.length > 0);
+        buildSkillPrompt(skills),
+        ...(definition.interactive
+          ? [
+              "If you need user input, call ask_user with a question and optional choices.",
+            ]
+          : []),
+      ]
+        .filter((part) => part.length > 0)
+        .join("\n\n");
+      let currentContext = context;
+      let currentEmit: (event: StepEvent) => void = () => {
+        throw new Error("question outside an agent turn");
+      };
+      const ask = definition.interactive
+        ? async (question: Question, signal?: AbortSignal): Promise<Answer> => {
+            if (signal?.aborted) throw new Error("question aborted");
+            currentEmit({
+              type: "question",
+              at: new Date().toISOString(),
+              summary: question.prompt,
+            });
+            const answer = await currentContext.callbacks.ask?.(question);
+            if (signal?.aborted) throw new Error("question aborted");
+            if (answer === undefined || typeof answer.text !== "string") {
+              throw new Error("question was not answered");
+            }
+            if (
+              answer.optionId !== undefined &&
+              !question.options.some((item) => item.id === answer.optionId)
+            ) {
+              throw new Error("answer optionId is not in the question");
+            }
+            currentEmit({
+              type: "answer",
+              at: new Date().toISOString(),
+              summary: answer.optionId
+                ? `selected option ${answer.optionId}`
+                : "free-text answer submitted",
+            });
+            return answer;
+          }
+        : undefined;
       const session = await adapter.createSession({
         modelProvider: provider,
         modelId: id,
         thinkingLevel: definition.thinkingLevel,
-        systemPrompt: systemParts.join("\n\n"),
+        systemPrompt,
+        ...(ask === undefined ? {} : { ask }),
         credentials: { provider, secret: context.providerSecret ?? "" },
         workDir: context.workDir,
-        signal: context.signal,
       });
-      let usage = emptyUsage();
-      let writes = Promise.resolve();
-      const emit = (event: StepEvent) => {
-        const priced: StepEvent =
-          event.usage === undefined
-            ? event
-            : { ...event, usage: usageWithCost(event.usage, session.rates) };
-        if (priced.usage !== undefined) {
-          usage = {
-            inputTokens: usage.inputTokens + priced.usage.inputTokens,
-            outputTokens: usage.outputTokens + priced.usage.outputTokens,
-            cacheReadTokens:
-              (usage.cacheReadTokens ?? 0) +
-              (priced.usage.cacheReadTokens ?? 0),
-            cacheWriteTokens:
-              (usage.cacheWriteTokens ?? 0) +
-              (priced.usage.cacheWriteTokens ?? 0),
-            ...(priced.usage.costUsd === undefined
-              ? {}
-              : { costUsd: (usage.costUsd ?? 0) + priced.usage.costUsd }),
-          };
-        }
-        writes = writes.then(() => appendEvents(context.outputDir, [priced]));
-        context.callbacks.onEvent(priced);
+      const active: ActiveAgent = {
+        definition,
+        session,
+        workDir: context.workDir,
+        inFlight: false,
+        activate(nextContext, emit) {
+          currentContext = nextContext;
+          currentEmit = emit;
+        },
       };
-      try {
-        await session.prompt(taskText, emit);
-        await writes;
-        const outputs: Record<string, string> = {};
-        for (const name of definition.outputs) {
-          const file = join(outDir, name);
-          const info = await lstat(file);
-          if (!info.isFile())
-            throw new Error(`output is not a regular file: ${name}`);
-          outputs[name] = file;
-        }
-        return { status: "succeeded", outputs, usage };
-      } catch (error) {
-        await writes;
-        const rawMessage =
-          error instanceof Error ? error.message : String(error);
-        const message = context.providerSecret
-          ? rawMessage.replaceAll(context.providerSecret, "[redacted]")
-          : rawMessage;
-        emit({ type: "error", at: new Date().toISOString(), summary: message });
-        await writes;
-        return { status: "failed", outputs: {}, usage, error: message };
-      } finally {
-        await session.dispose();
-      }
+      agents.set(context.outputDir, active);
+      return runTurn(active, taskText, context);
+    },
+    async continueAgent(
+      instruction: string,
+      context: StepContext,
+    ): Promise<StepResult> {
+      const active = agents.get(context.outputDir);
+      if (active === undefined) throw new Error("no agent session to continue");
+      if (context.workDir !== active.workDir)
+        throw new Error("workDir changed during continuation");
+      if (instruction.trim().length === 0)
+        throw new Error("continuation instruction is empty");
+      requireAsk(context, active.definition);
+      if (active.inFlight) throw new Error("agent session is already running");
+      await appendFile(
+        join(context.outputDir, "task.md"),
+        `\n\n## Continuation\n\n${instruction}`,
+      );
+      return runTurn(active, instruction, context);
     },
     async runCommand(
       _definition: CommandNodeDefinition,
@@ -139,11 +243,12 @@ export function createAgentRunner(adapter: SessionAdapter): StepRunner {
     ): Promise<StepResult> {
       throw new Error("command nodes are not implemented");
     },
-    async continueAgent(
-      _instruction: string,
-      _context: StepContext,
-    ): Promise<StepResult> {
-      throw new Error("continueAgent is not implemented");
+    async dispose(): Promise<void> {
+      const sessions = [...agents.values()];
+      if (sessions.some((item) => item.inFlight))
+        throw new Error("agent session is still running");
+      agents.clear();
+      await Promise.all(sessions.map((item) => item.session.dispose()));
     },
   };
 }
