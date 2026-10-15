@@ -1,5 +1,15 @@
 # Lessons
 
+## 2026-10-15 pi 1.3.0 SDK 能力
+
+- SDK 默认不加载 `~/.pi/agent/extensions`。ChatGPT 多账号扩展 `codex-accounts` 必须通过 `DefaultResourceLoader.additionalExtensionPaths` 加载，否则只有 `openai-codex` 模型，没有 `codexJ` 凭证。
+- `createAgentSession({ tools })` 是允许名单。自定义工具也必须写进这个名单，否则不会出现。
+- `SettingsManager.inMemory({ retry: { enabled: false } })` 可以关掉 pi 内置重试。
+- `message_end` 事件带 `usage`。Anthropic 有单价。Codex 订阅模型的单价是 0。
+- Node 26 可以用 `node --experimental-strip-types` 直接跑 TypeScript。
+- 本机 Codex 最便宜的模型是 `codexJ/gpt-6-luna`，不是计划里的 `gpt-5.6-luna`。
+- 来源：`spikes/pi-capabilities.ts` 在 1.3.0 上的运行记录。
+
 ## 2026-10-14 pi 的凭证和计费
 
 - pi 用 `/login` 登录，凭证保存在 `~/.pi/agent/auth.json`。pi 不复用 Claude Code、Codex 或 Gemini CLI 的登录。

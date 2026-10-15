@@ -1,0 +1,18 @@
+{
+  "name": "aipilotagent",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "lint": "biome check .",
+    "test": "npm test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "typescript": "5.9.3"
+  }
+}

@@ -62,6 +62,13 @@
 - **理由：** 降低花费和订阅额度的消耗。Claude 经 pi 使用时按 token 计费。
 - **来源：** 用户在第 1 阶段计划审阅中的批注。
 
+## 2026-10-15 锁定 pi 1.3.0
+
+- **选择：** 全局 pi 和 runner 的 SDK 都用 `@earendil-works/pi-coding-agent` 1.3.0。
+- **理由：** npm 当前最新是 1.3.0。用户要求全局和项目都升到该版本。
+- **影响：** 本条取代 Phase 1 Plan 中锁定 1.2.0 的决定。
+- **来源：** 用户在 2026-10-15 的回复。
+
 ## 2026-10-14 第 1 阶段只验证 Anthropic 和 OpenAI
 
 - **选择：** 第 1 阶段的真实模型验证只用 Anthropic（Claude 订阅）和 OpenAI（ChatGPT 订阅）。Google 暂不使用。

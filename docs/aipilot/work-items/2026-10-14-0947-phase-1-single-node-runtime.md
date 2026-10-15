@@ -226,11 +226,11 @@ Premises:
 ### Task Group 1: 脚手架与 pi 能力验证   (AC: AC-1, AC-2, AC-3, AC-7, AC-9, AC-10)
 Touches: 仓库根目录、`packages/runner`、`spikes/`
 Tests: fast
-- [ ] Task 1.1: 初始化 git 仓库，加入 `.gitignore`，把现有文档做成初始提交。 — Verify: `git log --oneline` 显示初始提交，`git status` 显示工作区干净。
-- [ ] Task 1.2: 把全局安装的 pi 从 0.84.3 升级到 1.2.0。然后搭建 npm workspace：根 `package.json` 的脚本、严格模式的 `tsconfig`、`biome.json`，以及 `packages/runner` 包和一个占位测试。在 runner 包中按确切版本 1.2.0 引用 pi SDK。 — Verify: `pi --version` 显示 1.2.0。`npm run typecheck`、`npm run lint` 和 `npm test` 全部通过。`npm ls @earendil-works/pi-coding-agent` 显示 1.2.0。
-- [ ] Task 1.3: 确认两家凭证都可用。先列出 `~/.pi/agent/auth.json` 中已有的提供方，只列名称，不显示内容。缺少的提供方，请用户在终端运行 `pi`，用 `/login` 登录 Claude Pro/Max 和 ChatGPT Plus/Pro（Codex）。再在 pi 1.2.0 的文档中复查这些说明。 — Verify: 凭证文件中有 Anthropic 和 OpenAI Codex 两项。Execution Record 记录每家的凭证类型，并引用 pi 文档中关于 Claude extra usage 计费的原文。
-- [ ] Task 1.4: 写验证脚本 `spikes/pi-capabilities.ts`，用真实模型逐项检查 P1 到 P11，并检查 pi 能否限定工具集。两家提供方都要跑，每家用模型目录中最便宜的模型：Claude 用最新的 Haiku，OpenAI 用 `gpt-5.6-luna`。脚本标记为 throwaway。 — Verify: 运行脚本，在 Execution Record 中引用关键输出。结论表列出每个前提的结果：成立，或不成立及采用的退路。
-- [ ] Task 1.5: 按验证结论修订 handoff 中的 StepRunner 接口草案，写成 `packages/runner/src/types.ts`。注释写明每个部分依赖哪个前提。 — Verify: `npm run typecheck` 通过。接口覆盖节点定义、调用方回调（事件、提问、中止）和返回结果。
+- [x] Task 1.1: 初始化 git 仓库，加入 `.gitignore`，把现有文档做成初始提交。 — Verify: `git log --oneline` 显示初始提交，`git status` 显示工作区干净。
+- [x] Task 1.2: 把全局安装的 pi 升级到 1.3.0。然后搭建 npm workspace：根 `package.json` 的脚本、严格模式的 `tsconfig`、`biome.json`，以及 `packages/runner` 包和一个占位测试。在 runner 包中按确切版本 1.3.0 引用 pi SDK。 — Verify: `pi --version` 显示 1.3.0。`npm run typecheck`、`npm run lint` 和 `npm test` 全部通过。`npm ls @earendil-works/pi-coding-agent` 显示 1.3.0。
+- [x] Task 1.3: 确认两家凭证都可用。先列出 `~/.pi/agent/auth.json` 中已有的提供方，只列名称，不显示内容。缺少的提供方，请用户在终端运行 `pi`，用 `/login` 登录 Claude Pro/Max 和 ChatGPT Plus/Pro（Codex）。再在 pi 1.3.0 的文档中复查这些说明。 — Verify: 凭证文件中有 Anthropic 和 OpenAI Codex 两项。Execution Record 记录每家的凭证类型，并引用 pi 文档中关于 Claude extra usage 计费的原文。
+- [x] Task 1.4: 写验证脚本 `spikes/pi-capabilities.ts`，用真实模型逐项检查 P1 到 P11，并检查 pi 能否限定工具集。两家提供方都要跑，每家用模型目录中最便宜的模型：Claude 用最新的 Haiku，OpenAI 用 `gpt-5.6-luna`。脚本标记为 throwaway。 — Verify: 运行脚本，在 Execution Record 中引用关键输出。结论表列出每个前提的结果：成立，或不成立及采用的退路。
+- [x] Task 1.5: 按验证结论修订 handoff 中的 StepRunner 接口草案，写成 `packages/runner/src/types.ts`。注释写明每个部分依赖哪个前提。 — Verify: `npm run typecheck` 通过。接口覆盖节点定义、调用方回调（事件、提问、中止）和返回结果。
 Done when: 结论表覆盖 P1 到 P11，每个前提都成立，或者已有记录的退路。发现的约束已写入 `memory/lessons.md`。快速档通过。
 
 ### User Story 2: 运行单个 agent 节点   (AC: AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-9, AC-12, AC-15, AC-16, AC-17)
@@ -262,7 +262,7 @@ Done when: 所有任务的 Verify 通过。开发脚本能运行一个命令节�
 
 ### Reuse Notes
 
-- runner 使用 pi SDK：`@earendil-works/pi-coding-agent` 1.2.0，按确切版本锁定。全局安装先从 0.84.3 升级到 1.2.0。
+- runner 使用 pi SDK：`@earendil-works/pi-coding-agent` 1.3.0，按确切版本锁定。全局安装升级到 1.3.0。
 - 测试用 Node 自带的 `node:test`。命令节点用 `child_process`。终端问答用 `readline`。
 - 模型单价复用 pi 的模型元数据（P7）。
 - skill 注入需要新代码。原因是按 handoff 的决定，不依赖 pi 的 skill 机制。
@@ -274,7 +274,7 @@ Done when: 所有任务的 Verify 通过。开发脚本能运行一个命令节�
 - 不实现 FakeRunner。它属于第 2 阶段。本阶段的假适配器只替代 pi 会话，不替代整个 runner。
 - 不实现完整的运行目录和 `state.json`。它们属于第 3 阶段。
 - 不按写权限限制工具集。本阶段只在验证脚本中检查 pi 能否做到，供第 3 阶段使用。
-- 本阶段锁定 pi 1.2.0。阶段内不再升级到更新的版本。
+- 本阶段锁定 pi 1.3.0。阶段内不再升级到更新的版本。
 
 ### Exit Criteria (work-item convergence)
 
@@ -293,6 +293,41 @@ Stop and ask the user when:
 - a destructive or irreversible action is required.
 - Claude 订阅无法通过 pi 使用，例如账号没有开启 extra usage。这时要问用户是开启 extra usage，还是申请 Anthropic API key。
 - 某家提供方的凭证不可用，导致 AC-2 无法用真实模型验证。
-- pi 1.2.0 有阻塞性的缺陷。这时要问用户是否退回 0.84.3。
+- pi 1.3.0 有阻塞性的缺陷。这时要问用户是否退回 1.0.0。
 
 ## Execution Record
+
+Start: 3407ae0. Commit policy: auto.
+本会话确认粒度：per user story/task group。提交策略：auto。
+
+### Task 1.1 — 2026-10-15
+
+- **Changes:** 已有初始提交 `301b0ec`。本会话补交已批准的 `architecture.md`，得到 `3407ae0`。
+- **Evidence:** `git log --oneline` 显示 `3407ae0` 和 `301b0ec`。`git status` 显示 working tree clean。
+
+### Task 1.2 — 2026-10-15
+
+- **Changes:** 用户把锁定版本从 1.2.0 改为 1.3.0。全局 pi 升到 1.3.0。搭了 npm workspace、tsc、Biome 和 `@aipilotagent/runner` 占位包。
+- **Evidence:** `pi --version` 输出 `1.3.0`。`npm ls @earendil-works/pi-coding-agent` 显示 `1.3.0`。`npm run typecheck`、`npm run lint`、`npm test` 通过。
+
+### Task 1.3 — 2026-10-15
+
+- **Changes:** 只读取凭证提供方名称。未改凭证文件。
+- **Evidence:** 提供方名称：`anthropic`、`antigravity`、`codexJ`、`codexM`、`openrouter`、`xai`。`anthropic`、`codexJ`、`codexM` 的 `type` 都是 `oauth`。pi 1.3.0 `docs/settings.md`：`Warn when Anthropic subscription authentication may use paid extra usage.` CHANGELOG：`Anthropic third-party usage draws from extra usage and is billed per token.`
+
+### Task 1.4 — 2026-10-15
+
+- **Changes:** 新增 throwaway 脚本 `spikes/pi-capabilities.ts`。Anthropic 用 `claude-haiku-5-5`。OpenAI 用 `codexJ/gpt-6-luna`。
+- **Evidence:** 脚本结论：P1 到 P11 在两家提供方上均为 yes。工具允许名单可以只留 `read` 和 `wait_probe`。`wait_probe` 异步等待 3003ms 会话未中断。`message_end` 带 usage。ChatGPT 单价为 0。
+- **Notes:** P6 只验证了 3 秒，没有等几分钟。P8 没有制造真实 429，依据 `isRetryableError` 文档。ChatGPT 登录要加载 `codex-accounts` 扩展。
+
+### Task 1.5 — 2026-10-15
+
+- **Changes:** 写入 `packages/runner/src/types.ts`。接口覆盖节点定义、回调、中止信号和返回结果。
+- **Evidence:** `npm run typecheck` 通过。
+
+### Task Group 1 — 2026-10-15
+
+- **Changes:** 完成脚手架和 pi 能力验证。
+- **Evidence:** 快速档：`npm run typecheck && npm run lint && npm test` 通过。占位测试 `runner package loads` 通过。
+- **Review:** 主代理审查。`clean-context result unavailable`。范围：workspace 脚手架、`types.ts`、throwaway spike。无 P1/P2 缺陷。未把凭证写入仓库。
