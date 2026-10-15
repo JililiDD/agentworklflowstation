@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI direction mock v2: workflow editor and run view</title>
+<style>
+/* Hue is reserved for state. Chrome, selection, and primary actions use ink. */
+:root {
+  --base:#f4f5f7; --panel:#ffffff; --raised:#ffffff; --sunken:#eef0f3;
+  --line:#e2e5e9; --line-strong:#c8cdd4; --ink:#1b1f24; --ink-2:#3a414b; --muted:#5f6b7a; --faint:#8b95a3;
+  --on-ink:#ffffff;
+  --run:#2563eb; --ok:#15803d; --fail:#dc2626; --wait:#b45309; --skip:#8a94a3;
+  --grid:#d9dde3; --edge:#9aa3af;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --base:#16181b; --panel:#1c1f23; --raised:#22262b; --sunken:#1a1d21;
+    --line:#2c3137; --line-strong:#3c434c; --ink:#eef0f2; --ink-2:#c9ced5; --muted:#9aa4b0; --faint:#6f7985;
+    --on-ink:#16181b;
+    --run:#60a5fa; --ok:#4ade80; --fail:#f87171; --wait:#fbbf24; --skip:#6f7985;
+    --grid:#262a30; --edge:#56606c;
+  }
+}
+:root[data-theme="dark"] {
+  --base:#16181b; --panel:#1c1f23; --raised:#22262b; --sunken:#1a1d21;
+  --line:#2c3137; --line-strong:#3c434c; --ink:#eef0f2; --ink-2:#c9ced5; --muted:#9aa4b0; --faint:#6f7985;
+  --on-ink:#16181b;
+  --run:#60a5fa; --ok:#4ade80; --fail:#f87171; --wait:#fbbf24; --skip:#6f7985;
+  --grid:#262a30; --edge:#56606c;
+}
+* { box-sizing:border-box; }
+html, body { margin:0; background:var(--base); color:var(--ink); }
+body { font:13px/1.5 var(--sans); -webkit-font-smoothing:antialiased; }
+svg { flex:none; }
+button { font:inherit; color:inherit; }
+:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+
+.screen { height:100vh; min-height:780px; display:flex; position:relative; border-bottom:4px solid var(--line-strong); }
+.mock-note { position:absolute; left:64px; bottom:10px; font-size:11px; color:var(--faint); z-index:5; }
+
+/* navigation */
+.nav { width:52px; border-right:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; align-items:center; padding:10px 0; gap:4px; flex:none; }
+.mark { width:26px; height:26px; margin-bottom:12px; display:grid; place-items:center; }
+.nav a { width:36px; height:36px; display:grid; place-items:center; border-radius:5px; color:var(--muted); position:relative; }
+.nav a.on { background:var(--sunken); color:var(--ink); }
+.nav a.on::before { content:""; position:absolute; left:-8px; top:9px; bottom:9px; width:2px; border-radius:1px; background:var(--ink); }
+.nav .spacer { flex:1; }
+.nav .theme { width:36px; height:26px; border:1px dashed var(--line-strong); background:none; color:var(--faint); border-radius:4px; cursor:pointer; font-size:11px; }
+.count { position:absolute; top:4px; right:2px; min-width:15px; height:15px; border-radius:8px; background:var(--wait); color:var(--on-ink); font-size:10px; font-weight:700; display:grid; place-items:center; padding:0 4px; }
+
+/* main */
+.main { flex:1; display:flex; flex-direction:column; min-width:0; }
+.topbar { height:48px; border-bottom:1px solid var(--line); background:var(--panel); display:flex; align-items:center; padding:0 12px 0 16px; gap:10px; flex:none; }
+.title { font-size:14px; font-weight:600; }
+.title .up { color:var(--muted); font-weight:400; }
+.quiet { color:var(--muted); }
+.grow { flex:1; }
+.btn { height:28px; padding:0 11px; border-radius:4px; border:1px solid var(--line-strong); background:var(--raised); display:inline-flex; align-items:center; gap:6px; font-weight:500; cursor:pointer; }
+.btn:hover { border-color:var(--ink-2); }
+.btn.primary { background:var(--ink); border-color:var(--ink); color:var(--on-ink); }
+.btn[disabled] { opacity:.4; cursor:not-allowed; }
+.btn.stop { color:var(--fail); }
+.zoom { display:inline-flex; align-items:center; height:28px; border:1px solid var(--line-strong); border-radius:4px; background:var(--raised); }
+.zoom button { width:28px; height:26px; border:none; background:none; cursor:pointer; font-size:15px; }
+.zoom span { padding:0 8px; font-size:12px; color:var(--muted); border-left:1px solid var(--line); border-right:1px solid var(--line); line-height:26px; font-variant-numeric:tabular-nums; }
+.code { font-family:var(--mono); font-size:11.5px; }
+.ref { font-family:var(--mono); font-size:11.5px; color:var(--ink); text-decoration:underline dotted var(--faint); text-underline-offset:3px; }
+.work { flex:1; display:flex; min-height:0; }
+
+/* node library */
+.library { width:76px; border-right:1px solid var(--line); background:var(--panel); padding:12px 8px; display:flex; flex-direction:column; gap:6px; flex:none; }
+.library .lib-title { font-size:11px; color:var(--muted); text-align:center; margin-bottom:2px; }
+.library button { border:1px solid var(--line); border-radius:5px; padding:9px 0 7px; display:flex; flex-direction:column; align-items:center; gap:4px; font-size:11px; color:var(--ink-2); background:var(--raised); cursor:grab; }
+.library button:hover { border-color:var(--line-strong); }
+
+/* canvas */
+.canvas-col { flex:1; display:flex; flex-direction:column; min-width:0; }
+.canvas { flex:1; overflow:auto; position:relative; background-color:var(--base);
+  background-image:linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:24px 24px; background-position:-1px -1px; }
+.canvas.run { background-image:radial-gradient(var(--grid) 1px, transparent 1px); background-size:24px 24px; }
+.world { position:relative; width:960px; height:1240px; margin:0 auto; }
+svg.edges { position:absolute; left:0; top:0; width:960px; height:1240px; pointer-events:none; z-index:1; }
+.snapshot { position:sticky; top:12px; left:12px; z-index:4; display:inline-block; margin:12px 0 0 12px; font-size:12px; color:var(--muted); background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:3px 8px; }
+
+/* artifact labels on edges: what flows from one node to the next */
+.flow { position:absolute; transform:translate(-50%, -50%); z-index:2; display:inline-flex; align-items:center; gap:5px; height:20px; padding:0 7px; border-radius:10px; background:var(--panel); border:1px solid var(--line-strong); font:11px var(--mono); color:var(--ink-2); white-space:nowrap; }
+.flow svg { color:var(--faint); }
+.flow.pending { border-style:dashed; color:var(--faint); background:var(--base); }
+.flow.made svg { color:var(--ok); }
+
+/* containers */
+.frame { position:absolute; border:1px solid var(--line-strong); border-radius:6px; background:var(--sunken); }
+.frame.inner { background:var(--panel); }
+/* foreach: offset outlines behind the frame read as a stack, one copy per item */
+.stack-layer { position:absolute; border:1px solid var(--line-strong); border-radius:6px; background:var(--sunken); }
+.stack-layer.far { opacity:.55; }
+.fh { height:38px; display:flex; align-items:center; gap:8px; padding:0 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+.fh .kind { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+.fh .name { color:var(--muted); }
+.fh .rule { font:11px var(--mono); color:var(--muted); background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:2px 6px; overflow:hidden; text-overflow:ellipsis; min-width:0; max-width:220px; }
+.fh .fold { margin-left:auto; color:var(--faint); }
+.stepper { display:inline-flex; align-items:center; height:24px; border:1px solid var(--line-strong); border-radius:4px; background:var(--raised); }
+.stepper button { width:22px; height:22px; border:none; background:none; color:var(--muted); cursor:pointer; padding:0; display:grid; place-items:center; }
+.stepper b { padding:0 8px; font-size:12px; font-weight:600; border-left:1px solid var(--line); border-right:1px solid var(--line); line-height:22px; font-variant-numeric:tabular-nums; }
+
+/* node cards */
+.card { position:absolute; width:236px; height:120px; border:1px solid var(--line-strong); border-radius:5px; background:var(--raised); padding:9px 11px 9px; display:flex; flex-direction:column; gap:4px; overflow:hidden; z-index:1; }
+.card.sel { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
+.card.bad { border-color:var(--fail); }
+.card .head { display:flex; align-items:center; gap:7px; font-weight:600; font-size:13px; line-height:1.3; }
+.card .head .marks { margin-left:auto; display:flex; gap:6px; color:var(--muted); align-items:center; }
+.card .model { display:flex; align-items:center; gap:8px; font:11.5px var(--mono); color:var(--muted); }
+.card .model .id { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card .task { font-size:12px; line-height:1.4; color:var(--ink-2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.card .skills { margin-top:auto; display:flex; gap:4px; overflow:hidden; }
+.skill { font:11px var(--mono); color:var(--muted); border:1px solid var(--line); border-radius:3px; padding:1px 5px; white-space:nowrap; }
+.err-text { color:var(--fail); font-weight:600; }
+
+
+/* run status on cards */
+.card.s-ok { box-shadow:inset 3px 0 0 var(--ok); }
+.card.s-wait { box-shadow:inset 3px 0 0 var(--wait); }
+.card.s-pend { box-shadow:inset 3px 0 0 var(--skip); }
+.card.s-wait.sel { box-shadow:inset 3px 0 0 var(--wait), 0 0 0 1px var(--ink); }
+.card.s-pend .head, .card.s-pend .task, .card.s-pend .model { opacity:.6; }
+.card .state { margin-top:auto; display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
+.card .state .dur { font-weight:400; color:var(--muted); font-variant-numeric:tabular-nums; }
+.t-ok { color:var(--ok); } .t-wait { color:var(--wait); } .t-run { color:var(--run); } .t-pend { color:var(--skip); } .t-fail { color:var(--fail); }
+
+/* problems */
+.problems { height:104px; border-top:1px solid var(--line); background:var(--panel); flex:none; }
+.problems .ph { height:34px; display:flex; align-items:center; gap:8px; padding:0 16px; border-bottom:1px solid var(--line); font-weight:600; }
+.problems .n { min-width:18px; height:18px; border-radius:9px; display:grid; place-items:center; font-size:11px; background:var(--fail); color:var(--on-ink); padding:0 5px; }
+.problems .row { display:flex; align-items:center; gap:10px; padding:9px 16px; }
+.problems .row:hover { background:var(--sunken); }
+.go { color:var(--ink); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+
+/* run header */
+.runbar { height:46px; border-bottom:1px solid var(--line); background:var(--panel); display:flex; align-items:center; gap:28px; padding:0 16px; flex:none; }
+.stat { display:flex; align-items:baseline; gap:7px; }
+.stat .k { color:var(--muted); font-size:12px; }
+.stat .v { font-weight:600; font-variant-numeric:tabular-nums; }
+.meter { width:110px; height:5px; border-radius:3px; background:var(--sunken); border:1px solid var(--line); overflow:hidden; align-self:center; }
+.meter i { display:block; height:100%; width:36%; background:var(--ink-2); }
+.progress { display:flex; align-items:center; gap:10px; }
+.bar { display:flex; width:160px; height:6px; border-radius:3px; overflow:hidden; gap:2px; }
+.bar i { display:block; height:100%; }
+.legend { display:flex; gap:10px; font-size:12px; }
+.legend span { display:inline-flex; align-items:center; gap:4px; }
+.badge-wait { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--wait); }
+
+/* drawer */
+.drawer { width:384px; border-left:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; flex:none; min-height:0; }
+.dh { height:48px; display:flex; align-items:center; gap:9px; padding:0 16px; border-bottom:1px solid var(--line); flex:none; }
+.dh b { font-size:14px; }
+.dh .close { margin-left:auto; color:var(--muted); background:none; border:none; font-size:17px; cursor:pointer; }
+.dbody { flex:1; overflow:auto; }
+.group { padding:14px 16px 4px; border-bottom:1px solid var(--line); }
+.group > h3 { margin:0 0 10px; font-size:13px; font-weight:600; }
+.f { margin-bottom:12px; }
+.f > .lab { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+.hint { font-size:11.5px; color:var(--faint); margin-top:5px; }
+.box { min-height:30px; border:1px solid var(--line-strong); border-radius:4px; background:var(--raised); display:flex; align-items:center; gap:7px; padding:0 9px; }
+.box .caret { margin-left:auto; color:var(--muted); }
+.area { border:1px solid var(--line-strong); border-radius:4px; background:var(--raised); padding:8px 9px; font-size:12.5px; line-height:1.6; white-space:pre-wrap; }
+.seg { display:inline-flex; border:1px solid var(--line-strong); border-radius:4px; overflow:hidden; }
+.seg span { padding:4px 9px; font-size:12px; color:var(--muted); border-right:1px solid var(--line); cursor:pointer; }
+.seg span:last-child { border-right:none; }
+.seg span.on { background:var(--ink); color:var(--on-ink); font-weight:600; }
+.tags { display:flex; flex-wrap:wrap; gap:6px; }
+.tag { display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 8px; border:1px solid var(--line-strong); border-radius:4px; font:12px var(--mono); }
+.tag .x { color:var(--faint); cursor:pointer; }
+.tag.add { border-style:dashed; color:var(--muted); font-family:var(--sans); cursor:pointer; }
+.row2 { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.row2 .d { font-size:11.5px; color:var(--faint); }
+.sw { width:30px; height:18px; border-radius:9px; background:var(--line-strong); position:relative; flex:none; }
+.sw::after { content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--raised); }
+.sw.on { background:var(--ink); }
+.sw.on::after { left:14px; }
+
+.tabs { display:flex; gap:4px; padding:0 12px; border-bottom:1px solid var(--line); flex:none; }
+.tab { padding:10px 6px 9px; color:var(--muted); border:none; border-bottom:2px solid transparent; background:none; cursor:pointer; font-weight:500; }
+.tab.on { color:var(--ink); border-bottom-color:var(--ink); }
+.pane { display:none; }
+.pane.on { display:block; }
+.ctx { display:flex; gap:14px; align-items:center; padding:9px 16px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); flex:none; }
+.ctx b { color:var(--ink); font-weight:600; }
+
+/* transcript, not chat bubbles */
+.transcript { padding:14px 16px; display:flex; flex-direction:column; gap:14px; }
+.turn .who { font-size:12px; color:var(--muted); margin-bottom:4px; }
+.turn .who b { color:var(--ink); font-weight:600; }
+.turn .q { border-left:2px solid var(--line-strong); padding:1px 0 1px 10px; }
+.turn .a { margin-top:6px; padding-left:12px; color:var(--ink-2); }
+.turn .a::before { content:"You answered: "; color:var(--muted); }
+.turn.now .q { border-left-color:var(--wait); }
+.choices { margin:10px 0 0 12px; display:flex; flex-direction:column; gap:6px; }
+.choice { display:flex; align-items:center; gap:9px; text-align:left; border:1px solid var(--line-strong); background:var(--raised); border-radius:4px; padding:6px 9px; cursor:pointer; }
+.choice:hover { border-color:var(--ink-2); }
+.choice kbd { font:11px var(--mono); color:var(--muted); border:1px solid var(--line-strong); border-radius:3px; padding:0 5px; }
+.composer { border-top:1px solid var(--line); padding:12px 16px; display:flex; flex-direction:column; gap:8px; flex:none; }
+.composer .input { border:1px solid var(--line-strong); border-radius:4px; padding:8px 9px; color:var(--faint); min-height:50px; background:var(--raised); }
+.composer .foot { display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--faint); }
+
+.events { font-size:12px; }
+.ev { display:grid; grid-template-columns:58px 16px 1fr auto; gap:9px; align-items:center; padding:7px 16px; border-bottom:1px solid var(--line); }
+.ev:hover { background:var(--sunken); }
+.ev .t { font:11px var(--mono); color:var(--faint); font-variant-numeric:tabular-nums; }
+.ev .s { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ev .m { font:11px var(--mono); color:var(--muted); }
+.ev.live { box-shadow:inset 2px 0 0 var(--wait); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .spin { animation:spin 1s linear infinite; transform-origin:50% 50%; }
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-agent" viewBox="0 0 16 16"><path d="M8 1.8 14.2 8 8 14.2 1.8 8Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cmd" viewBox="0 0 16 16"><path d="M3 4.5 6.5 8 3 11.5M8 12h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-group" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.6v2.6h-2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-foreach" viewBox="0 0 16 16"><path d="M4.5 3.5h9v6h-9z M2.5 6v6.5h9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-flows" viewBox="0 0 16 16"><path d="M2.5 2.5h4v4h-4zM9.5 9.5h4v4h-4zM4.5 6.5v2a2 2 0 0 0 2 2h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-runs" viewBox="0 0 16 16"><path d="M4.5 2.8 13 8l-8.5 5.2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 16 16"><path d="M2 9h3.2l1 2h3.6l1-2H14M3.6 3h8.8L14 9v4H2V9Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 16 16"><path d="M2.5 4.5h11M2.5 11.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="4.5" r="1.8" fill="var(--panel)" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="11.5" r="1.8" fill="var(--panel)" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-write" viewBox="0 0 16 16"><path d="M10.8 2.7l2.5 2.5L6 12.5H3.5V10Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-ask" viewBox="0 0 16 16"><path d="M2.5 3h11v7.5h-6L4.5 13v-2.5h-2Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-approve" viewBox="0 0 16 16"><path d="M8 1.6l5 2v4.1c0 3-2.2 5.3-5 6.6-2.8-1.3-5-3.6-5-6.6V3.6Z M5.6 8l1.7 1.7 3.1-3.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+    <symbol id="i-cond" viewBox="0 0 16 16"><path d="M5 2.5v11M5 8.5h2.5a3.5 3.5 0 0 0 3.5-3.5V2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 1.8h5.5L12.5 5v9.2H4Z M9.3 1.8V5.2h3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.3 8.2l1.8 1.8 3.6-3.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-err" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.8V8l2.2 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-pend" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.4 2.2"/></symbol>
+    <symbol id="i-model" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 6.5h4M6 9.5h2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 16 16"><path d="M3 4h10v8H3zM3 6.5h10" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-left" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-right" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-mark" viewBox="0 0 26 26"><rect x="2" y="2" width="8" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="16" y="16" width="8" height="8" rx="2" fill="currentColor"/><path d="M6 10v4a4 4 0 0 0 4 4h6" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" style="fill:var(--edge)"/></marker>
+  </defs>
+</svg>
+
+<!-- ============ SCREEN 1: WORKFLOW EDITOR ============ -->
+<section class="screen" id="editor">
+  <nav class="nav" aria-label="Main">
+    <div class="mark"><svg width="22" height="22"><use href="#i-mark"/></svg></div>
+    <a href="#editor" class="on" title="Workflows"><svg width="18" height="18"><use href="#i-flows"/></svg></a>
+    <a href="#run" title="Runs"><svg width="18" height="18"><use href="#i-runs"/></svg></a>
+    <a href="#run" title="Inbox: 2 items need you"><svg width="18" height="18"><use href="#i-inbox"/></svg><span class="count">2</span></a>
+    <div class="spacer"></div>
+    <a href="#editor" title="Settings"><svg width="18" height="18"><use href="#i-settings"/></svg></a>
+    <button class="theme" type="button" title="Mock only: switch theme" onclick="toggleTheme()">◐</button>
+  </nav>
+
+  <div class="main">
+    <header class="topbar">
+      <span class="title"><span class="up">Workflows /</span> feature-dev</span>
+      <span class="quiet">Saved 2 min ago</span>
+      <span class="grow"></span>
+      <button class="btn" type="button" title="Add an Agent, Command, Group, or Foreach node"><svg width="12" height="12"><use href="#i-plus"/></svg>Add node</button>
+      <span class="zoom"><button type="button" title="Zoom out (Ctrl -)">−</button><span title="Fit to screen (Ctrl 0)">100%</span><button type="button" title="Zoom in (Ctrl +)">+</button></span>
+      <button class="btn" type="button">Save</button>
+      <button class="btn primary" type="button" disabled title="Fix 1 problem to run"><svg width="11" height="11"><use href="#i-runs"/></svg>Run</button>
+    </header>
+
+    <div class="work">
+      <aside class="library" aria-label="Node library">
+        <div class="lib-title">Drag to add</div>
+        <button type="button"><svg width="16" height="16"><use href="#i-agent"/></svg>Agent</button>
+        <button type="button"><svg width="16" height="16"><use href="#i-cmd"/></svg>Command</button>
+        <button type="button"><svg width="16" height="16"><use href="#i-group"/></svg>Group</button>
+        <button type="button"><svg width="16" height="16"><use href="#i-foreach"/></svg>Foreach</button>
+      </aside>
+
+      <div class="canvas-col">
+        <div class="canvas" id="canvas-editor">
+          <div class="world">
+            <svg class="edges" viewBox="0 0 960 1240" aria-hidden="true">
+              <g fill="none" style="stroke:var(--edge)" stroke-width="1.5" marker-end="url(#arrow)">
+                <path d="M480 144 L480 206"/>
+                <path d="M480 328 L480 380"/>
+                <path d="M480 616 L480 678"/>
+                <path d="M480 800 C480 836 354 828 354 862"/>
+                <path d="M480 800 C480 836 606 828 606 862"/>
+                <path d="M480 1020 L480 1082"/>
+              </g>
+            </svg>
+
+            <span class="flow" style="left:480px;top:176px"><svg width="11" height="11"><use href="#i-file"/></svg>requirement.md</span>
+            <span class="flow" style="left:480px;top:356px"><svg width="11" height="11"><use href="#i-file"/></svg>stories.json</span>
+            <span class="flow" style="left:410px;top:832px"><svg width="11" height="11"><use href="#i-file"/></svg>log</span>
+            <span class="flow" style="left:550px;top:832px"><svg width="11" height="11"><use href="#i-file"/></svg>log</span>
+
+            <div class="card" style="left:362px;top:24px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>spec
+                <span class="marks"><svg width="14" height="14"><title>Interactive</title><use href="#i-ask"/></svg></span></div>
+              <div class="model"><span class="id">claude-opus-5-5 · high</span></div>
+              <div class="task">Interview the user about <span class="ref">{{inputs.requirement}}</span>. Write the requirement to <span class="ref">{{out.requirement}}</span>.</div>
+              <div class="skills"><span class="skill">product-spec-builder</span></div>
+            </div>
+
+            <div class="card" style="left:362px;top:208px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>plan
+                <span class="marks"><svg width="14" height="14"><title>Needs approval</title><use href="#i-approve"/></svg></span></div>
+              <div class="model"><span class="id">claude-opus-5-5 · high</span></div>
+              <div class="task">Plan stories for <span class="ref">{{spec.requirement}}</span>. Write the story list to <span class="ref">{{out.stories}}</span>.</div>
+              <div class="skills"><span class="skill">dev-plan-builder</span></div>
+            </div>
+
+            <div class="stack-layer far" style="left:210px;top:382px;width:560px;height:628px"></div>
+            <div class="stack-layer" style="left:205px;top:387px;width:560px;height:628px"></div>
+            <div class="frame" style="left:200px;top:392px;width:560px;height:628px">
+              <div class="fh"><span class="kind"><svg width="15" height="15"><use href="#i-foreach"/></svg>For each</span><span class="name">story in</span>
+                <span class="rule">plan.stories</span><span class="fold" title="Collapse">▾</span></div>
+            </div>
+            <div class="frame inner" style="left:216px;top:440px;width:528px;height:564px">
+              <div class="fh"><span class="kind"><svg width="15" height="15"><use href="#i-group"/></svg>Repeat</span><span class="name">impl-loop until</span>
+                <span class="rule" title="review-logic.verdict.status = approved AND review-security.verdict.status = approved">review-logic.verdict.status = approved, review-security …</span>
+                <span class="quiet">max 2, then ask me</span><span class="fold" title="Collapse">▾</span></div>
+            </div>
+
+            <div class="card sel" style="left:362px;top:496px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>build
+                <span class="marks"><svg width="14" height="14"><title>Writable</title><use href="#i-write"/></svg></span></div>
+              <div class="model"><span class="id">claude-sonnet-5-5 · medium</span></div>
+              <div class="task">Implement story <span class="ref">{{item.title}}</span> as planned in <span class="ref">{{plan.plan}}</span>.</div>
+              <div class="skills"><span class="skill">dev-builder</span><span class="skill">java-backend-expert</span></div>
+            </div>
+
+            <div class="card" style="left:362px;top:680px">
+              <div class="head"><svg width="14" height="14"><use href="#i-cmd"/></svg>test
+                <span class="marks"><span class="skill" title="A non-zero exit code does not fail this node">exit ≠ 0 allowed</span></span></div>
+              <div class="model"><span class="id">./gradlew test</span></div>
+              <div class="task">Runs in the workspace. The log and the exit code become outputs.</div>
+              <div class="skills"><span class="quiet" style="font-size:12px">No skills</span></div>
+            </div>
+
+            <div class="card" style="left:236px;top:864px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>review-logic</div>
+              <div class="model"><span class="id">claude-opus-5-5 · high</span></div>
+              <div class="task">Review <span class="ref">{{build.diff}}</span> against <span class="ref">{{plan.plan}}</span>, with <span class="ref">{{test.log}}</span>.</div>
+              <div class="skills"><span class="skill">code-reviewer</span></div>
+            </div>
+
+            <div class="card bad" style="left:488px;top:864px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>review-security
+                <span class="marks t-fail"><svg width="14" height="14"><title>1 problem</title><use href="#i-err"/></svg></span></div>
+              <div class="model"><span class="id">openai/gpt-5 · <span class="err-text">xhigh</span></span></div>
+              <div class="task">Review <span class="ref">{{build.diff}}</span> for security risks. Write <span class="ref">{{out.verdict}}</span>.</div>
+              <div class="skills"><span class="skill">code-reviewer</span></div>
+            </div>
+
+            <div class="card" style="left:362px;top:1084px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>docs
+                <span class="marks"><svg width="14" height="14"><title>Has a condition</title><use href="#i-cond"/></svg><svg width="14" height="14"><title>Writable</title><use href="#i-write"/></svg></span></div>
+              <div class="model"><span class="id">claude-sonnet-5-5 · low</span></div>
+              <div class="task">Update the docs for the merged stories. Runs only when <span class="ref">plan.meta.needs_docs</span> is true.</div>
+              <div class="skills"><span class="quiet" style="font-size:12px">No skills</span></div>
+            </div>
+          </div>
+        </div>
+
+        <section class="problems" aria-label="Problems">
+          <div class="ph">Problems <span class="n">1</span><span class="grow"></span><span class="quiet">▾</span></div>
+          <div class="row"><svg width="14" height="14" class="t-fail"><use href="#i-err"/></svg>
+            <b>review-security</b><span><span class="code">openai/gpt-5</span> does not support thinking level <span class="code">xhigh</span>. Choose minimal, low, medium, or high.</span>
+            <span class="grow"></span><span class="go">Go to node</span></div>
+        </section>
+      </div>
+
+      <aside class="drawer" aria-label="Node properties">
+        <div class="dh"><svg width="16" height="16"><use href="#i-agent"/></svg><b>build</b><span class="quiet">Agent</span><button class="close" type="button" title="Close">×</button></div>
+        <div class="dbody">
+          <div class="group">
+            <h3>Model</h3>
+            <div class="f"><div class="box"><svg width="14" height="14" class="quiet"><use href="#i-model"/></svg><span class="code">anthropic/claude-sonnet-5-5</span><span class="caret">▾</span></div></div>
+            <div class="f"><span class="lab">Thinking</span>
+              <div class="seg"><span>Off</span><span>Minimal</span><span>Low</span><span class="on">Medium</span><span>High</span><span>Xhigh</span></div></div>
+          </div>
+          <div class="group">
+            <h3>Prompt</h3>
+            <div class="f"><span class="lab">Skills</span>
+              <div class="tags"><span class="tag">dev-builder <span class="x">×</span></span><span class="tag">java-backend-expert <span class="x">×</span></span><span class="tag add">Add skill</span></div>
+              <div class="hint">From <span class="code">~/dev/aipilot-main/skills</span></div></div>
+            <div class="f"><span class="lab">Task</span>
+              <div class="area">Implement story <span class="ref">{{item.title}}</span> as planned in <span class="ref">{{plan.plan}}</span>.
+Meet the acceptance criteria in <span class="ref">{{item.acs}}</span>.</div>
+              <div class="hint">Type <span class="code">{{</span> to insert an input, an output, or a field of the current item.</div></div>
+            <div class="f"><span class="lab">Instructions</span>
+              <div class="area">Do not run code review. Do not commit. Review nodes and checkpoints handle both.</div></div>
+          </div>
+          <div class="group">
+            <h3>Behavior</h3>
+            <div class="f"><span class="lab">Workspace access</span>
+              <div class="seg"><span>Read-only</span><span class="on">Writable</span></div>
+              <div class="hint">Only one writable node runs at a time.</div></div>
+            <div class="f row2"><div>Ask me questions while running<div class="d">Makes this node interactive.</div></div><span class="sw"></span></div>
+            <div class="f row2"><div>Wait for my approval<div class="d">Downstream nodes start after you approve.</div></div><span class="sw"></span></div>
+            <div class="f row2"><div>Condition<div class="d">Always runs.</div></div><span class="go">Add condition</span></div>
+          </div>
+          <div class="group">
+            <h3>Outputs</h3>
+            <div class="f row2"><div><span class="code">diff</span> <span class="d">created for writable nodes</span></div><span class="go">Add output</span></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <div class="mock-note">Mock v2, screen 1: workflow editor</div>
+</section>
+
+<!-- ============ SCREEN 2: RUN VIEW ============ -->
+<section class="screen" id="run">
+  <nav class="nav" aria-label="Main">
+    <div class="mark"><svg width="22" height="22"><use href="#i-mark"/></svg></div>
+    <a href="#editor" title="Workflows"><svg width="18" height="18"><use href="#i-flows"/></svg></a>
+    <a href="#run" class="on" title="Runs"><svg width="18" height="18"><use href="#i-runs"/></svg></a>
+    <a href="#run" title="Inbox: 2 items need you"><svg width="18" height="18"><use href="#i-inbox"/></svg><span class="count">2</span></a>
+    <div class="spacer"></div>
+    <a href="#editor" title="Settings"><svg width="18" height="18"><use href="#i-settings"/></svg></a>
+    <button class="theme" type="button" title="Mock only: switch theme" onclick="toggleTheme()">◐</button>
+  </nav>
+
+  <div class="main">
+    <header class="topbar">
+      <span class="title"><span class="up">Runs /</span> novel-writing #17</span>
+      <span class="code quiet" title="Target repository and start commit">~/writing/harbor-novel at 3f9c2e1</span>
+      <span class="badge-wait"><svg width="13" height="13"><use href="#i-wait"/></svg>Waiting for your answer</span>
+      <span class="grow"></span>
+      <button class="btn stop" type="button">Stop run</button>
+    </header>
+    <div class="runbar">
+      <div class="stat"><span class="k">Elapsed</span><span class="v">1:42:10</span></div>
+      <div class="stat"><span class="k">Cost</span><span class="v">$5.40</span><span class="meter" title="36% of budget"><i></i></span><span class="k">of $15.00</span></div>
+      <div class="stat"><span class="k">You stepped in</span><span class="v">4 times</span></div>
+      <div class="progress">
+        <span class="bar" title="5 done, 1 waiting, 2 pending"><i style="flex:5;background:var(--ok)"></i><i style="flex:1;background:var(--wait)"></i><i style="flex:2;background:var(--line-strong)"></i></span>
+        <span class="legend"><span class="t-ok"><svg width="12" height="12"><use href="#i-ok"/></svg>5 done</span><span class="t-wait"><svg width="12" height="12"><use href="#i-wait"/></svg>1 waiting</span><span class="t-pend"><svg width="12" height="12"><use href="#i-pend"/></svg>2 pending</span></span>
+      </div>
+    </div>
+
+    <div class="work">
+      <div class="canvas-col">
+        <div class="canvas run" id="canvas-run">
+          <span class="snapshot">Read-only snapshot from run start</span>
+          <div class="world">
+            <svg class="edges" viewBox="0 0 960 1240" aria-hidden="true">
+              <g fill="none" style="stroke:var(--edge)" stroke-width="1.5" marker-end="url(#arrow)">
+                <path d="M480 144 L480 206"/>
+                <path d="M480 328 L480 380"/>
+                <path d="M480 616 L480 678"/>
+              </g>
+              <g fill="none" style="stroke:var(--edge)" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arrow)" opacity=".75">
+                <path d="M480 800 L480 862"/>
+                <path d="M480 1020 L480 1082"/>
+              </g>
+            </svg>
+
+            <span class="flow made" style="left:480px;top:176px"><svg width="11" height="11"><use href="#i-ok"/></svg>brief.md</span>
+            <span class="flow made" style="left:480px;top:356px"><svg width="11" height="11"><use href="#i-ok"/></svg>chapters.json</span>
+            <span class="flow made" style="left:480px;top:648px"><svg width="11" height="11"><use href="#i-ok"/></svg>diff</span>
+            <span class="flow pending" style="left:480px;top:832px"><svg width="11" height="11"><use href="#i-file"/></svg>notes.md</span>
+
+            <div class="card s-ok" style="left:362px;top:24px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>interview
+                <span class="marks"><svg width="14" height="14"><title>Interactive</title><use href="#i-ask"/></svg></span></div>
+              <div class="model"><span class="id">claude-opus-5-5 · high</span></div>
+              <div class="task">Interview the author about <span class="ref">{{inputs.premise}}</span>. Write <span class="ref">{{out.brief}}</span>.</div>
+              <div class="state t-ok"><svg width="14" height="14"><use href="#i-ok"/></svg>Succeeded<span class="dur">6m 31s, $0.84</span></div>
+            </div>
+
+            <div class="card s-ok" style="left:362px;top:208px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>outline
+                <span class="marks"><svg width="14" height="14"><title>Needs approval</title><use href="#i-approve"/></svg></span></div>
+              <div class="model"><span class="id">claude-opus-5-5 · high</span></div>
+              <div class="task">Write a chapter outline from <span class="ref">{{interview.brief}}</span> to <span class="ref">{{out.chapters}}</span>.</div>
+              <div class="state t-ok"><svg width="14" height="14"><use href="#i-ok"/></svg>Approved<span class="dur">3m 12s, $0.61</span></div>
+            </div>
+
+            <div class="stack-layer far" style="left:210px;top:382px;width:560px;height:628px"></div>
+            <div class="stack-layer" style="left:205px;top:387px;width:560px;height:628px"></div>
+            <div class="frame" style="left:200px;top:392px;width:560px;height:628px">
+              <div class="fh"><span class="kind"><svg width="15" height="15"><use href="#i-foreach"/></svg>For each</span><span class="name">chapter</span>
+                <span class="stepper"><button type="button" title="Previous chapter"><svg width="12" height="12"><use href="#i-left"/></svg></button><b>3 of 12</b><button type="button" title="Next chapter"><svg width="12" height="12"><use href="#i-right"/></svg></button></span>
+                <span class="t-ok" style="font-size:12px">2 done</span><span class="fold" title="Collapse">▾</span></div>
+            </div>
+            <div class="frame inner" style="left:216px;top:440px;width:528px;height:564px">
+              <div class="fh"><span class="kind"><svg width="15" height="15"><use href="#i-group"/></svg>Repeat</span><span class="name">chapter-loop</span>
+                <span class="stepper"><button type="button" title="Previous round"><svg width="12" height="12"><use href="#i-left"/></svg></button><b>Round 1 of 3</b><button type="button" title="Next round"><svg width="12" height="12"><use href="#i-right"/></svg></button></span>
+                <span class="rule" title="until edit-review.verdict.status = approved">until edit-review.verdict.status = approved</span></div>
+            </div>
+
+            <div class="card s-ok" style="left:362px;top:496px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>write-chapter
+                <span class="marks"><svg width="14" height="14"><title>Writable</title><use href="#i-write"/></svg></span></div>
+              <div class="model"><span class="id">claude-sonnet-5-5 · medium</span></div>
+              <div class="task">Write chapter <span class="ref">{{item.number}}</span>, <span class="ref">{{item.title}}</span>. Read earlier chapters first.</div>
+              <div class="state t-ok"><svg width="14" height="14"><use href="#i-ok"/></svg>Succeeded<span class="dur">4m 12s, $0.37</span></div>
+            </div>
+
+            <div class="card s-wait sel" style="left:362px;top:680px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>author-check
+                <span class="marks"><svg width="14" height="14"><title>Interactive</title><use href="#i-ask"/></svg></span></div>
+              <div class="model"><span class="id">claude-sonnet-5-5 · low</span></div>
+              <div class="task">Check chapter <span class="ref">{{item.number}}</span> against the outline. Ask the author about any change.</div>
+              <div class="state t-wait"><svg width="14" height="14"><use href="#i-wait"/></svg>Waiting for your answer<span class="dur">3m 40s</span></div>
+            </div>
+
+            <div class="card s-pend" style="left:362px;top:864px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>edit-review</div>
+              <div class="model"><span class="id">openai/gpt-5 · high</span></div>
+              <div class="task">Review the new chapter as an editor. Write <span class="ref">{{out.verdict}}</span>.</div>
+              <div class="state t-pend"><svg width="14" height="14"><use href="#i-pend"/></svg>Pending</div>
+            </div>
+
+            <div class="card s-pend" style="left:362px;top:1084px">
+              <div class="head"><svg width="14" height="14"><use href="#i-agent"/></svg>polish
+                <span class="marks"><svg width="14" height="14"><title>Writable</title><use href="#i-write"/></svg></span></div>
+              <div class="model"><span class="id">claude-sonnet-5-5 · medium</span></div>
+              <div class="task">Polish the manuscript for consistent names, tense, and tone.</div>
+              <div class="state t-pend"><svg width="14" height="14"><use href="#i-pend"/></svg>Pending</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="drawer" aria-label="Node detail">
+        <div class="dh"><svg width="16" height="16"><use href="#i-agent"/></svg><b>author-check</b><span class="quiet">Agent</span><button class="close" type="button" title="Close">×</button></div>
+        <div class="ctx"><span>Chapter <b>3</b></span><span>Round <b>1</b></span><span class="code">claude-sonnet-5-5</span><span>Cost <b>$0.09</b></span></div>
+        <div class="tabs" role="tablist">
+          <button class="tab on" type="button" data-pane="p-q">Questions</button>
+          <button class="tab" type="button" data-pane="p-ev">Events</button>
+          <button class="tab" type="button" data-pane="p-task">Task</button>
+          <button class="tab" type="button" data-pane="p-out">Outputs</button>
+        </div>
+        <div class="dbody">
+          <div class="pane on" id="p-q">
+            <div class="transcript">
+              <div class="turn">
+                <div class="who"><b>author-check</b> asked at 10:41</div>
+                <div class="q">The chapter ends on the harbor fire. The outline puts the fire two chapters later. Keep this pacing?</div>
+                <div class="a">Keep it. Move the trial to chapter 5.</div>
+              </div>
+              <div class="turn now">
+                <div class="who"><b>author-check</b> asks, 10:43</div>
+                <div class="q">Chapter 3 introduces Mara, a harbor pilot. She is not in the outline. How should I handle her?</div>
+                <div class="choices">
+                  <button class="choice" type="button"><kbd>1</kbd>Keep Mara as a minor character</button>
+                  <button class="choice" type="button"><kbd>2</kbd>Replace her with Ilse from the outline</button>
+                  <button class="choice" type="button"><kbd>3</kbd>Remove the scene</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pane" id="p-ev">
+            <div class="events">
+              <div class="ev"><span class="t">10:37:02</span><svg width="14" height="14" class="quiet"><use href="#i-model"/></svg><span class="s">Model call</span><span class="m">18.2k in, 0.6k out, $0.06</span></div>
+              <div class="ev"><span class="t">10:37:08</span><svg width="14" height="14" class="quiet"><use href="#i-tool"/></svg><span class="s">Read <span class="code">chapters/ch03.md</span></span><span class="m">0.1s</span></div>
+              <div class="ev"><span class="t">10:37:08</span><svg width="14" height="14" class="quiet"><use href="#i-tool"/></svg><span class="s">Read <span class="code">chapters.json</span></span><span class="m">0.1s</span></div>
+              <div class="ev"><span class="t">10:37:09</span><svg width="14" height="14" class="quiet"><use href="#i-tool"/></svg><span class="s">Read <span class="code">chapters/ch02.md</span></span><span class="m">0.1s</span></div>
+              <div class="ev"><span class="t">10:39:40</span><svg width="14" height="14" class="quiet"><use href="#i-model"/></svg><span class="s">Model call</span><span class="m">31.5k in, 1.2k out, $0.02</span></div>
+              <div class="ev"><span class="t">10:41:05</span><svg width="14" height="14" class="quiet"><use href="#i-ask"/></svg><span class="s">Asked question 1</span><span class="m">answered</span></div>
+              <div class="ev"><span class="t">10:42:30</span><svg width="14" height="14" class="quiet"><use href="#i-model"/></svg><span class="s">Model call</span><span class="m">32.1k in, 0.4k out, $0.01</span></div>
+              <div class="ev live"><span class="t">10:43:01</span><svg width="14" height="14" class="t-wait"><use href="#i-ask"/></svg><span class="s">Asked question 2</span><span class="m t-wait">waiting</span></div>
+            </div>
+          </div>
+          <div class="pane" id="p-task">
+            <div class="group"><h3>Task as sent</h3>
+              <div class="area">Check chapter 3 against the outline in <span class="ref">chapters.json</span>. Ask the author about any change.</div></div>
+          </div>
+          <div class="pane" id="p-out">
+            <div class="group"><h3>Outputs</h3><p class="quiet">No outputs yet. This node writes <span class="code">notes.md</span>.</p></div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="input">Type an answer, or press 1, 2, or 3</div>
+          <div class="foot"><span>If the platform stops, this node starts over.</span><span class="grow"></span><button class="btn primary" type="button">Send answer</button></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <div class="mock-note">Mock v2, screen 2: run view</div>
+</section>
+
+<script>
+function toggleTheme() {
+  var root = document.documentElement;
+  var dark = root.getAttribute('data-theme') === 'dark' ||
+    (!root.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  root.setAttribute('data-theme', dark ? 'light' : 'dark');
+}
+document.querySelectorAll('.tab').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('on'); });
+    document.querySelectorAll('.pane').forEach(function (p) { p.classList.remove('on'); });
+    tab.classList.add('on');
+    document.getElementById(tab.dataset.pane).classList.add('on');
+  });
+});
+['canvas-editor', 'canvas-run'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (el) el.scrollTop = 330;
+});
+</script>
+</body>
+</html>
