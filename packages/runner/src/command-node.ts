@@ -75,7 +75,20 @@ export async function runCommandNode(
     cwd: context.workDir,
     shell: true,
     detached: process.platform !== "win32",
-    env: commandEnvironment(context.providerSecret),
+    env: {
+      ...commandEnvironment(context.providerSecret),
+      ...(context.feedback === undefined
+        ? {}
+        : {
+            AIPILOT_FEEDBACK: redact(
+              context.feedback.text,
+              context.providerSecret,
+            ),
+            AIPILOT_PREVIOUS_OUTPUTS_JSON: JSON.stringify(
+              context.feedback.outputs,
+            ),
+          }),
+    },
     signal: context.signal,
     stdio: ["ignore", "pipe", "pipe"],
   });

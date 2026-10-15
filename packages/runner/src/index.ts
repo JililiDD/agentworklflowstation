@@ -5,4 +5,5 @@ export {
   readNodeDefinitionFile,
 } from "./load-definition.ts";
 export { createAgentRunner } from "./run-agent.ts";
+export { resolveSkills } from "./skills.ts";
 export type * from "./types.ts";

@@ -28,6 +28,7 @@ async function run(
   command: string,
   allowNonZeroExit: boolean,
   providerSecret?: string,
+  feedback?: { text: string; outputs: Record<string, string> },
 ) {
   const outputDir = await mkdtemp(join(tmpdir(), "runner-command-"));
   const workDir = await mkdtemp(join(tmpdir(), "runner-command-work-"));
@@ -49,6 +50,7 @@ async function run(
       },
     },
     ...(providerSecret === undefined ? {} : { providerSecret }),
+    ...(feedback === undefined ? {} : { feedback }),
   });
   await runner.dispose();
   return { result, events, workDir, adapter };
@@ -126,6 +128,29 @@ test("oversized command logs fail without retaining unbounded output", {
   assert.match(result.error ?? "", /log limit exceeded/);
   const info = await stat(outputPath(result, "stdout"));
   assert.ok(info.size <= 4 * 1024 * 1024);
+});
+
+test("rejected command receives feedback and previous output paths without model credentials", async () => {
+  const secret = "test-private-credential";
+  const { result } = await run(
+    nodeCommand(
+      "process.stdout.write(JSON.stringify({feedback:process.env.AIPILOT_FEEDBACK,outputs:process.env.AIPILOT_PREVIOUS_OUTPUTS_JSON}))",
+    ),
+    false,
+    secret,
+    {
+      text: `Please revise ${secret}`,
+      outputs: { stdout: "/tmp/previous/stdout.log" },
+    },
+  );
+  assert.equal(result.status, "succeeded");
+  const values = JSON.parse(
+    await readFile(outputPath(result, "stdout"), "utf8"),
+  );
+  assert.deepEqual(values, {
+    feedback: "Please revise [redacted]",
+    outputs: JSON.stringify({ stdout: "/tmp/previous/stdout.log" }),
+  });
 });
 
 test("command environment excludes model credentials and fake secret", async () => {

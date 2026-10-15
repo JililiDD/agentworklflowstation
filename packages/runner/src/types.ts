@@ -89,6 +89,8 @@ export interface StepContext {
   callbacks: StepCallbacks;
   /** Test seam for AC-16. Real runs omit this and load one provider from pi auth. */
   providerSecret?: string;
+  /** Feedback and prior outputs when an approved node is rejected and rerun. */
+  feedback?: { text: string; outputs: Record<string, string> };
 }
 
 export interface StepResult {

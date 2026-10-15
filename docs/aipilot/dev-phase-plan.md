@@ -17,13 +17,13 @@
 - Enables: 第 2 阶段按验证过的能力定下 StepRunner 接口，包括提问、产物修正和事件。第 3 阶段接入这个 runner。
 - Work-item: 2026-10-14-0947-phase-1-single-node-runtime.md
 
-### Phase 2: 调度核心  [planned]
+### Phase 2: 调度核心  [merged]
 
 - Goal: 实现工作流模型、加载时校验和调度器，覆盖产品规格中的全部控制结构。
 - Verifiable outcome: FakeRunner 测试覆盖这些行为：依赖、条件和跳过传播、审批和拒绝、组节点循环、顺序 foreach、任意嵌套、写入互斥、节点失败和中止。开发脚本对一个示例工作流输出每个节点的状态变化。
 - Depends on: Phase 1
 - Enables: 第 3 阶段在验证过的状态模型上实现持久化和续跑。第 6 阶段复用校验逻辑。
-- Work-item:
+- Work-item: 2026-10-15-1811-phase-2-scheduling-core.md
 
 ### Phase 3: 持久化、工作区与真实运行  [planned]
 
