@@ -3,7 +3,7 @@
 ## Summary
 
 aipilotAgent 是本机单用户工作流平台。
-仓库里还没有可运行的模块。
+平台由 runner、engine 和 service 三个包组成。
 本文件按已确认的规格和决策描述 v1 结构。
 用户在浏览器中搭建工作流。
 用户把工作流跑在目标 git 仓库上。
@@ -29,6 +29,7 @@ flowchart TD
   end
   Dev["Person: Developer"]
   Repo["Object storage: Target git repository"]
+  Auth["Object storage: Shared pi credentials (auth.json)"]
   Pi["External system: pi"]
   Ant["External system: Anthropic"]
   Oai["External system: OpenAI"]
@@ -37,16 +38,14 @@ flowchart TD
   CLI -->|"opens"| UI
   Plat -->|"serves pages to"| UI
   Dev -->|"uses"| UI
-  UI -->|"reads and writes"| Lib
-  UI -->|"reads and writes"| Set
-  UI -->|"starts a run on (HTTP)"| Plat
+  UI -->|"reads and writes (HTTP)"| Plat
+  Plat -->|"reads and writes"| Lib
+  Plat -->|"reads and writes"| Set
   Plat -->|"writes"| Rec
-  UI -->|"reads"| Rec
   Plat -->|"reads HEAD of"| Repo
   Plat -->|"writes checkpoints to"| WT
-  Plat -->|"runs agent nodes through"| Pi
-  Plat -->|"runs command nodes in"| WT
-  Plat -->|"saves run changes in"| Repo
+  Plat -->|"logs in through"| Pi
+  Plat -->|"uses scoped credentials from"| Auth
   Pi -->|"calls"| Ant
   Pi -->|"calls"| Oai
 ```
@@ -77,25 +76,22 @@ flowchart TD
   Set["Object storage: Platform settings"]
   Rec["Object storage: Run records"]
   WT["Object storage: Run worktree"]
+  Auth["Object storage: Shared pi credentials (auth.json)"]
   Repo["Object storage: Target git repository"]
   Pi["External system: pi"]
-  Ant["External system: Anthropic"]
-  Oai["External system: OpenAI"]
   UI -->|"sends requests to (HTTP)"| Api
   Api -->|"reads and writes"| Lib
   Api -->|"reads and writes"| Set
   Api -->|"starts and controls"| Eng
+  Api -->|"requests login from"| Run
   Eng -->|"runs nodes through"| Run
   Eng -->|"delegates git work to"| Ws
   Eng -->|"writes"| Rec
-  Eng -->|"passes node credentials to"| Run
-  Run -->|"creates a session with"| Pi
+  Run -->|"uses and refreshes"| Auth
+  Run -->|"creates sessions with"| Pi
   Run -->|"runs commands in"| WT
   Ws -->|"creates and checkpoints"| WT
   Ws -->|"reads HEAD of"| Repo
-  Ws -->|"saves run changes in"| Repo
-  Pi -->|"calls"| Ant
-  Pi -->|"calls"| Oai
 ```
 
 HTTP API 是界面的唯一入口。
@@ -111,7 +107,5 @@ runner 不依赖引擎。
 
 - **A-1 (Web UI library):** Web UI 的界面库尚未选定。见 product-spec 的 Deferred Choices。
 - **A-2 (Canvas library):** 画布所用的库尚未选定。
-- **A-3 (Platform data path):** 工作流库、运行记录、设置和凭证的存储路径尚未选定。
 - **A-4 (Change delivery):** 运行改动在目标仓库中的保存方式尚未选定。见 product-spec Q-1。
-- **A-5 (CLI command):** CLI 的名称和启动命令尚未选定。
 - **A-6 (Single process):** CLI 启动的本地服务在一个 Node 进程中运行。

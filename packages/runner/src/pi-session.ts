@@ -1,6 +1,7 @@
-import { mkdtemp } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
@@ -10,6 +11,7 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import lockfile from "proper-lockfile";
 import { Type } from "typebox";
 import { isRateLimitOrTimeout, ModelApiError } from "./retry.ts";
 import type {
@@ -54,15 +56,116 @@ async function askUntilAborted(
   }
 }
 
-type CredentialStore = NonNullable<
+export type CredentialStore = NonNullable<
   NonNullable<Parameters<typeof ModelRuntime.create>[0]>["credentials"]
 >;
 
-/** Only the selected credential enters this runtime. OAuth refresh stays in memory. */
+export function createFileCredentialStore(authPath: string): CredentialStore {
+  return {
+    async read(providerId, options) {
+      if (options?.signal?.aborted) throw new Error("aborted");
+      try {
+        const text = await readFile(authPath, "utf8");
+        const data = JSON.parse(text) as Record<string, CredentialStore>;
+        return data[providerId] as unknown as NonNullable<
+          Parameters<Parameters<CredentialStore["modify"]>[1]>[0]
+        >;
+      } catch {
+        return undefined;
+      }
+    },
+    async list(options) {
+      if (options?.signal?.aborted) throw new Error("aborted");
+      try {
+        const text = await readFile(authPath, "utf8");
+        const data = JSON.parse(text) as Record<string, unknown>;
+        return Object.entries(data).map(([providerId, cred]) => ({
+          providerId,
+          type:
+            (cred as { type?: "api_key" | "oauth" }).type ??
+            ("api_key" as const),
+        }));
+      } catch {
+        return [];
+      }
+    },
+    async modify(providerId, fn, options) {
+      if (options?.signal?.aborted) throw new Error("aborted");
+      const parent = dirname(authPath);
+      await mkdir(parent, { recursive: true });
+      if (!existsSync(authPath)) {
+        await writeFile(authPath, "{}", { encoding: "utf8", mode: 0o600 });
+      }
+      const release = await lockfile.lock(authPath, {
+        realpath: false,
+        retries: 10,
+      });
+      try {
+        if (options?.signal?.aborted) throw new Error("aborted");
+        let data: Record<string, unknown> = {};
+        try {
+          const text = await readFile(authPath, "utf8");
+          data = JSON.parse(text) as Record<string, unknown>;
+        } catch {
+          data = {};
+        }
+        const current = data[providerId] as
+          | Parameters<Parameters<CredentialStore["modify"]>[1]>[0]
+          | undefined;
+        const next = await fn(current);
+        if (next === undefined) {
+          delete data[providerId];
+        } else {
+          data[providerId] = next;
+        }
+        await writeFile(authPath, `${JSON.stringify(data, null, 2)}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+        return next;
+      } finally {
+        await release();
+      }
+    },
+    async delete(providerId, options) {
+      await this.modify(providerId, async () => undefined, options);
+    },
+  };
+}
+
+/** Only the selected credential enters this runtime. Shared auth writes back under lock. */
 export function scopedCredentials(
   provider: string,
-  readCredential: typeof readStoredCredential = readStoredCredential,
+  source?: typeof readStoredCredential | CredentialStore,
 ): CredentialStore {
+  if (typeof source === "object" && source !== null && "modify" in source) {
+    const baseStore = source as CredentialStore;
+    return {
+      async read(id, options) {
+        if (id !== provider) return undefined;
+        return baseStore.read(id, options);
+      },
+      async list(options) {
+        const all = await baseStore.list(options);
+        return all.filter((c) => c.providerId === provider);
+      },
+      async modify(id, fn, options) {
+        if (id !== provider) {
+          throw new Error("credential provider is outside this node");
+        }
+        return baseStore.modify(id, fn, options);
+      },
+      async delete(id, options) {
+        if (id !== provider) {
+          throw new Error("credential provider is outside this node");
+        }
+        return baseStore.delete(id, options);
+      },
+    };
+  }
+
+  const readCredential =
+    typeof source === "function" ? source : readStoredCredential;
   let credential = readCredential(provider);
   return {
     async read(id) {
@@ -105,14 +208,26 @@ function usageFromUnknown(value: unknown): TokenUsage | undefined {
   return usage;
 }
 
-export function createPiSessionAdapter(): SessionAdapter {
+export function createPiSessionAdapter(adapterOptions?: {
+  authPath?: string;
+  baseStore?: CredentialStore;
+}): SessionAdapter {
+  const baseStore =
+    adapterOptions?.baseStore ??
+    (adapterOptions?.authPath
+      ? createFileCredentialStore(adapterOptions.authPath)
+      : undefined);
+
   return {
     async createSession(
       options: CreateSessionOptions,
     ): Promise<AgentSessionHandle> {
       const isolated = await mkdtemp(join(tmpdir(), "runner-pi-"));
       const runtime = await ModelRuntime.create({
-        credentials: scopedCredentials(options.modelProvider),
+        credentials: scopedCredentials(options.modelProvider, baseStore),
+        ...(adapterOptions?.authPath
+          ? { authPath: adapterOptions.authPath }
+          : {}),
       });
       let model = runtime.getModel(options.modelProvider, options.modelId);
       const isCodexAccount = /^codex[A-Za-z0-9_-]+$/.test(

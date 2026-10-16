@@ -33,13 +33,13 @@
 - Enables: 第 4 阶段的服务有可靠的运行可以启动和控制。
 - Work-item: 2026-10-15-1917-phase-3-durable-workspace.md
 
-### Phase 4: 本地服务  [planned]
+### Phase 4: 本地服务  [merged]
 
 - Goal: 用 CLI 启动本地服务，并通过接口管理工作流库、设置和运行。
 - Verifiable outcome: 接口测试覆盖这些操作：读取工作流库、保存设置、启动运行、接收实时事件、回答问题、批准、拒绝、中止和续跑。服务只接受本机访问。凭证不出现在日志和事件中。
 - Depends on: Phase 3
 - Enables: 第 5 阶段的界面只需要调用验证过的接口。
-- Work-item:
+- Work-item: 2026-10-15-2031-phase-4-local-service.md
 
 ### Phase 5: 运行视图  [planned]
 

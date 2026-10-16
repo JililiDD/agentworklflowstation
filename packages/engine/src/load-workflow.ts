@@ -73,7 +73,18 @@ function parseNode(value: unknown): WorkflowNode {
     }
   }
   if (data.kind === "agent" || data.kind === "command") {
-    const definition = loadNodeDefinition(JSON.stringify(data.definition));
+    const rawDef = { ...record(data.definition, "definition") };
+    if (!rawDef.kind) rawDef.kind = data.kind;
+    if (data.kind === "agent") {
+      if (rawDef.interactive === undefined) rawDef.interactive = false;
+      if (rawDef.skillNames === undefined) rawDef.skillNames = [];
+      if (rawDef.outputs === undefined) rawDef.outputs = [];
+    }
+    if (data.kind === "command") {
+      if (rawDef.allowNonZeroExit === undefined)
+        rawDef.allowNonZeroExit = false;
+    }
+    const definition = loadNodeDefinition(JSON.stringify(rawDef));
     if (definition.kind !== data.kind)
       throw new WorkflowDefinitionError(`definition kind mismatch: ${id}`);
     if (definition.kind === "command")
@@ -408,14 +419,18 @@ async function checkSkills(nodes: WorkflowNode[]): Promise<void> {
 }
 
 export async function loadWorkflow(
-  jsonText: string,
+  source: string | unknown,
   capabilities: WorkflowCapabilities,
 ): Promise<WorkflowDefinition> {
   let raw: unknown;
-  try {
-    raw = JSON.parse(jsonText);
-  } catch {
-    throw new WorkflowDefinitionError("workflow is not valid JSON");
+  if (typeof source === "string") {
+    try {
+      raw = JSON.parse(source);
+    } catch {
+      throw new WorkflowDefinitionError("workflow is not valid JSON");
+    }
+  } else {
+    raw = source;
   }
   const data = record(raw, "workflow");
   const inputs = names(data.inputs, "inputs");
