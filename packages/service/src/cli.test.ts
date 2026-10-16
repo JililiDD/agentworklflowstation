@@ -59,6 +59,7 @@ test("CLI starts service on loopback, serves requests, and shuts down on SIGTERM
       dataDir,
       "--auth-path",
       authPath,
+      "--no-open",
     ],
     {
       stdio: ["ignore", "pipe", "pipe"],
@@ -70,29 +71,40 @@ test("CLI starts service on loopback, serves requests, and shuts down on SIGTERM
     stdout += d.toString("utf8");
   });
 
-  // Wait for server to print listening URL
-  let port: number | undefined;
-  for (let i = 0; i < 50; i++) {
-    const match = /http:\/\/127\.0\.0\.1:(\d+)/.exec(stdout);
-    if (match?.[1]) {
-      port = Number.parseInt(match[1], 10);
-      break;
+  try {
+    // Parallel test workers can delay Node's TypeScript startup. Still require a
+    // real ready URL, with a bounded wait and cleanup on every failure path.
+    let port: number | undefined;
+    for (let i = 0; i < 200; i++) {
+      const match = /http:\/\/127\.0\.0\.1:(\d+)/.exec(stdout);
+      if (match?.[1]) {
+        port = Number.parseInt(match[1], 10);
+        break;
+      }
+      if (child.exitCode !== null) break;
+      await new Promise((r) => setTimeout(r, 50));
     }
-    await new Promise((r) => setTimeout(r, 50));
+    assert.ok(
+      port,
+      `port should be printed in stdout (child exit=${child.exitCode})`,
+    );
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as Record<string, unknown>;
+    assert.equal(data.status, "ok");
+
+    child.kill("SIGTERM");
+    const exitCode = await new Promise<number>((resolve) => {
+      child.once("exit", (code) => resolve(code ?? -1));
+    });
+    assert.equal(exitCode, 0);
+  } finally {
+    if (child.exitCode === null) {
+      child.kill("SIGKILL");
+      await new Promise<void>((resolve) => {
+        child.once("exit", () => resolve());
+      });
+    }
   }
-  assert.ok(port, "port should be printed in stdout");
-
-  // Health check request
-  const res = await fetch(`http://127.0.0.1:${port}/api/health`);
-  assert.equal(res.status, 200);
-  const data = (await res.json()) as Record<string, unknown>;
-  assert.equal(data.status, "ok");
-
-  // Send SIGTERM to shutdown
-  child.kill("SIGTERM");
-
-  const exitCode = await new Promise<number>((resolve) => {
-    child.on("exit", (code) => resolve(code ?? -1));
-  });
-  assert.equal(exitCode, 0);
 });

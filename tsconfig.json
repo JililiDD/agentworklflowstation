@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/runner" },
     { "path": "./packages/engine" },
-    { "path": "./packages/service" }
+    { "path": "./packages/service" },
+    { "path": "./packages/web" }
   ]
 }

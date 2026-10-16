@@ -8,7 +8,8 @@
   "scripts": {
     "typecheck": "tsc -b",
     "lint": "biome check .",
-    "test": "npm test --workspaces --if-present"
+    "test": "npm test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w @aipilotagent/web"
   },
   "engines": {
     "node": ">=24"

@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
   createAgentRunner,
   createPiSessionAdapter,
@@ -8,17 +11,34 @@ import { createPlatformHttpServer } from "./http-server.ts";
 import { RunManager } from "./run-manager.ts";
 import { getDataDir } from "./storage.ts";
 
+export function openBrowser(url: string): void {
+  const isWindows = process.platform === "win32";
+  const isMac = process.platform === "darwin";
+  const cmd = isWindows ? "cmd" : isMac ? "open" : "xdg-open";
+  const args = isWindows ? ["/c", "start", "", url] : [url];
+  try {
+    const child = spawn(cmd, args, { stdio: "ignore", detached: true });
+    child.unref();
+  } catch {
+    // Ignore browser open errors (e.g. in headless or non-desktop environments)
+  }
+}
+
 function parseArgs(): {
   port: number;
   host: string;
   dataDir?: string;
   authPath?: string;
+  staticDir?: string;
+  open: boolean;
 } {
   const args = process.argv.slice(2);
   let port = 3000;
   let host = "127.0.0.1";
   let dataDir: string | undefined;
   let authPath: string | undefined;
+  let staticDir: string | undefined;
+  let open = true;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -30,6 +50,10 @@ function parseArgs(): {
       dataDir = args[++i];
     } else if (arg === "--auth-path" && args[i + 1]) {
       authPath = args[++i];
+    } else if (arg === "--static-dir" && args[i + 1]) {
+      staticDir = args[++i];
+    } else if (arg === "--no-open") {
+      open = false;
     }
   }
 
@@ -46,13 +70,21 @@ function parseArgs(): {
     process.exit(1);
   }
 
-  return { port, host, dataDir, authPath };
+  return { port, host, dataDir, authPath, staticDir, open };
 }
 
 export async function runServer(): Promise<void> {
-  const { port, host, dataDir, authPath } = parseArgs();
+  const { port, host, dataDir, authPath, staticDir, open } = parseArgs();
   const resolvedDataDir = getDataDir(dataDir);
   const resolvedAuthPath = authPath ?? getDefaultAuthPath();
+
+  const candidateStaticDir =
+    staticDir ??
+    (existsSync(join(import.meta.dirname, "../../web/dist"))
+      ? join(import.meta.dirname, "../../web/dist")
+      : existsSync(join(process.cwd(), "packages/web/dist"))
+        ? join(process.cwd(), "packages/web/dist")
+        : undefined);
 
   const sessionAdapter = createPiSessionAdapter({
     authPath: resolvedAuthPath,
@@ -76,14 +108,23 @@ export async function runServer(): Promise<void> {
     authPath: resolvedAuthPath,
     port,
     host,
+    staticDir: candidateStaticDir,
     runManager,
     authManager,
   });
 
   const actualPort = await server.start();
-  console.log(`aipilotAgent service running at http://${host}:${actualPort}`);
+  const appUrl = `http://${host}:${actualPort}`;
+  console.log(`aipilotAgent service running at ${appUrl}`);
   console.log(`Data directory: ${resolvedDataDir}`);
   console.log(`Auth storage: ${resolvedAuthPath}`);
+  if (candidateStaticDir) {
+    console.log(`Static assets: ${candidateStaticDir}`);
+  }
+
+  if (open && !process.env.CI && !process.env.AIPILOT_NO_OPEN) {
+    openBrowser(appUrl);
+  }
 
   let stopping = false;
   const onSignal = async () => {

@@ -17,8 +17,11 @@ export {
   type PendingApprovalInfo,
   type PendingQuestion,
   type PendingQuestionInfo,
+  type RecordedInteraction,
   RunManager,
   type RunManagerOptions,
+  type RunPreviewResult,
+  type RunSetupValidation,
   type ServerEvent,
 } from "./run-manager.ts";
 export {

@@ -17,6 +17,7 @@ test("architecture dependency test confirms runner and engine have no illegal re
       "packages/runner",
       "packages/engine",
       "packages/service",
+      "packages/web/src",
     ],
     {
       cwd: rootDir,

@@ -1,3 +1,4 @@
+import { readFile, stat } from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
@@ -5,6 +6,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { AddressInfo } from "node:net";
+import { extname, join, resolve } from "node:path";
 import { URL } from "node:url";
 import { AuthManager, getDefaultAuthPath } from "./auth-manager.ts";
 import type { RunManager } from "./run-manager.ts";
@@ -13,7 +15,7 @@ import {
   listSkillsFromSettings,
   saveSettings,
 } from "./settings.ts";
-import { getDataDir } from "./storage.ts";
+import { assertNoPathTraversal, getDataDir } from "./storage.ts";
 import {
   deleteWorkflow,
   getWorkflow,
@@ -26,9 +28,26 @@ export interface HttpServerOptions {
   authPath?: string;
   port?: number;
   host?: string;
+  staticDir?: string;
   authManager?: AuthManager;
   runManager: RunManager;
 }
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf",
+};
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2MB
 
@@ -360,6 +379,23 @@ export function createPlatformHttpServer(options: HttpServerOptions): {
         return;
       }
 
+      if (pathname === "/api/runs/validate" && method === "POST") {
+        const body = (await readJsonBody(req)) as Record<string, unknown>;
+        const targetRepo = body.targetRepo as string;
+        const workflowId = body.workflowId as string | undefined;
+        const workflowYaml = body.workflowYaml as string | undefined;
+        const inputs = (body.inputs as Record<string, string>) ?? {};
+
+        const validation = await runManager.validateRunSetup({
+          targetRepo,
+          workflowId,
+          workflowYaml,
+          inputs,
+        });
+        sendJson(res, 200, validation);
+        return;
+      }
+
       if (pathname === "/api/runs" && method === "POST") {
         const body = (await readJsonBody(req)) as Record<string, unknown>;
         const targetRepo = body.targetRepo as string;
@@ -413,6 +449,44 @@ export function createPlatformHttpServer(options: HttpServerOptions): {
           typeof body.newBudgetUsd === "number" ? body.newBudgetUsd : undefined;
         const result = await runManager.resumeRun(runId, { newBudgetUsd });
         sendJson(res, 200, result);
+        return;
+      }
+
+      const runDefinitionMatch = /^\/api\/runs\/([^/]+)\/definition$/.exec(
+        pathname,
+      );
+      if (runDefinitionMatch && method === "GET") {
+        const runId = decodeURIComponent(runDefinitionMatch[1] ?? "");
+        const def = await runManager.getRunDefinition(runId);
+        sendJson(res, 200, def);
+        return;
+      }
+
+      const runPreviewMatch = /^\/api\/runs\/([^/]+)\/preview$/.exec(pathname);
+      if (runPreviewMatch && method === "GET") {
+        const runId = decodeURIComponent(runPreviewMatch[1] ?? "");
+        const nodePath = url.searchParams.get("nodePath") ?? "";
+        const kind = (url.searchParams.get("kind") ?? "output") as
+          | "diff"
+          | "output"
+          | "task";
+        const fileName = url.searchParams.get("fileName") ?? undefined;
+        const preview = await runManager.getRunPreview(runId, {
+          nodePath,
+          kind,
+          fileName,
+        });
+        sendJson(res, 200, preview);
+        return;
+      }
+
+      const runInteractionsMatch = /^\/api\/runs\/([^/]+)\/interactions$/.exec(
+        pathname,
+      );
+      if (runInteractionsMatch && method === "GET") {
+        const runId = decodeURIComponent(runInteractionsMatch[1] ?? "");
+        const interactions = await runManager.getRunInteractions(runId);
+        sendJson(res, 200, interactions);
         return;
       }
 
@@ -489,12 +563,13 @@ export function createPlatformHttpServer(options: HttpServerOptions): {
               : undefined;
         const text =
           typeof body.text === "string" ? body.text : (optionId ?? "");
+        const secret = Boolean(body.secret);
         const answer = {
           text,
           ...(optionId ? { optionId } : {}),
         };
-        await runManager.answerQuestion(runId, nodePath, answer);
-        sendJson(res, 200, { ok: true, runId, nodePath });
+        await runManager.answerQuestion(runId, nodePath, answer, { secret });
+        sendJson(res, 200, { ok: true, runId, nodePath, secret });
         return;
       }
 
@@ -521,6 +596,64 @@ export function createPlatformHttpServer(options: HttpServerOptions): {
         const inbox = await runManager.getInbox();
         sendJson(res, 200, inbox);
         return;
+      }
+
+      // Static files (Web UI)
+      if (
+        options.staticDir &&
+        (method === "GET" || method === "HEAD") &&
+        !pathname.startsWith("/api/")
+      ) {
+        const rawUrl = req.url ?? "";
+        if (
+          rawUrl.includes("..") ||
+          decodeURIComponent(rawUrl).includes("..") ||
+          pathname.includes("..") ||
+          decodeURIComponent(pathname).includes("..")
+        ) {
+          sendError(res, 403, "forbidden");
+          return;
+        }
+
+        const staticBase = resolve(options.staticDir);
+        const decodedPath = decodeURIComponent(pathname);
+        const relPath =
+          pathname === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
+        let targetFile = join(staticBase, relPath);
+        try {
+          assertNoPathTraversal(staticBase, targetFile);
+        } catch {
+          sendError(res, 403, "forbidden");
+          return;
+        }
+
+        let fileStat = await stat(targetFile).catch(() => undefined);
+        if (!fileStat?.isFile()) {
+          // SPA fallback for HTML requests
+          targetFile = join(staticBase, "index.html");
+          fileStat = await stat(targetFile).catch(() => undefined);
+        }
+
+        if (fileStat?.isFile()) {
+          const ext = extname(targetFile).toLowerCase();
+          const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+          const data = await readFile(targetFile);
+          const corsHeaders: Record<string, string> =
+            origin && isAllowedOrigin(origin)
+              ? { "Access-Control-Allow-Origin": origin }
+              : {};
+          res.writeHead(200, {
+            "Content-Type": contentType,
+            "Content-Length": data.length,
+            ...corsHeaders,
+          });
+          if (method === "HEAD") {
+            res.end();
+          } else {
+            res.end(data);
+          }
+          return;
+        }
       }
 
       sendError(res, 404, `endpoint not found: ${method} ${pathname}`);
