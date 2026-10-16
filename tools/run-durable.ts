@@ -31,12 +31,23 @@ async function git(args: string[], cwd: string): Promise<string> {
   return stdout.trim();
 }
 
-const isReal = process.argv.includes("--real");
-const model = isReal ? "anthropic/claude-haiku-5-5" : "fake/small";
-const thinkingLevel = "off" as const;
+const isReal =
+  process.argv.includes("--real") ||
+  process.argv.includes("--luna") ||
+  process.argv.some((arg) => arg.startsWith("--model"));
+const modelIndex = process.argv.indexOf("--model");
+const customModel =
+  modelIndex !== -1 ? process.argv[modelIndex + 1] : undefined;
+const useLuna =
+  process.argv.includes("--luna") || customModel?.includes("luna");
+const defaultRealModel = useLuna
+  ? "codexJ/gpt-6-luna"
+  : "anthropic/claude-haiku-5-5";
+const model = isReal ? (customModel ?? defaultRealModel) : "fake/small";
+const thinkingLevel = (useLuna ? "low" : "off") as const;
 
 console.log(
-  `Starting durable workflow (${isReal ? "REAL model" : "demo runner"})...`,
+  `Starting durable workflow (${isReal ? `REAL model: ${model}` : "demo runner"})...`,
 );
 
 const baseDir = await mkdtemp(join(tmpdir(), "aipilot-durable-demo-"));
@@ -106,7 +117,7 @@ const definition = await loadWorkflow(
   }),
   {
     models: {
-      [model]: [thinkingLevel],
+      [model]: ["off", "low", "medium", "high"],
     },
   },
 );
