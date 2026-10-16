@@ -41,7 +41,7 @@
 - Enables: 第 5 阶段的界面只需要调用验证过的接口。
 - Work-item: 2026-10-15-2031-phase-4-local-service.md
 
-### Phase 5: 运行视图  [in-progress]
+### Phase 5: 运行视图  [done]
 
 - Goal: 在浏览器界面中启动、查看和操作运行。
 - Verifiable outcome: 在设置页配置 skill 来源和凭证。选择工作流库中手写的 YAML 和目标仓库，启动运行。界面实时显示节点状态，能在抽屉中回答问题、批准和拒绝，Inbox 显示等待项，运行可以中止和续跑。Playwright 测试覆盖这些流程。

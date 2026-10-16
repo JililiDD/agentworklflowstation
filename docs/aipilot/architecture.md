@@ -21,7 +21,7 @@ flowchart TD
     direction TB
     CLI["Service: CLI (Node)"]
     Plat["Service: Local platform (Node)"]
-    UI["Service: Web UI"]
+    UI["Service: Web UI (React, Vite)"]
     Lib["Object storage: Workflow library"]
     Set["Object storage: Platform settings"]
     Rec["Object storage: Run records"]
@@ -105,7 +105,7 @@ runner 不依赖引擎。
 
 ## Assumptions
 
-- **A-1 (Web UI library):** Web UI 的界面库尚未选定。见 product-spec 的 Deferred Choices。
-- **A-2 (Canvas library):** 画布所用的库尚未选定。
+- **A-1 (Web UI library):** Web UI 采用 React + Vite + TypeScript 构建，由本地服务从同一 loopback origin 交付静态资源与 API。
+- **A-2 (Canvas library):** 运行视图（Phase 5）只读画布使用 React 节点卡片、容器框与原生 SVG 依赖线；可编辑画布库留待 Phase 6。
 - **A-4 (Change delivery):** 运行改动在目标仓库中的保存方式尚未选定。见 product-spec Q-1。
 - **A-6 (Single process):** CLI 启动的本地服务在一个 Node 进程中运行。
