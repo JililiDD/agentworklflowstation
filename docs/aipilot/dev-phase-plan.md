@@ -57,13 +57,13 @@
 - Enables: 第 7 阶段用编辑器搭建验收工作流。
 - Work-item: 2026-10-16-0823-phase-6-workflow-editor.md
 
-### Phase 7: 示例工作流验收  [planned]
+### Phase 7: 示例工作流验收  [done]
 
 - Goal: 只用平台能力，搭建并跑通 aipilot 和小说两个示例工作流。
 - Verifiable outcome: 两个示例工作流在真实仓库上从头跑到尾。运行摘要记录耗时、费用和人工介入次数。工作流库为空时，空状态中能打开这两个示例。
 - Depends on: Phase 6
 - Enables: 无。这是最后一个阶段。
-- Work-item:
+- Work-item: 2026-10-16-1130-phase-7-example-acceptance.md
 
 ## Testing Strategy
 

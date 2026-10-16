@@ -343,6 +343,16 @@ function validateGraph(
           false,
         );
       }
+    } else if (node.kind === "command") {
+      validateRef(
+        node.definition.command,
+        available,
+        previous,
+        inputs,
+        itemAvailable,
+        ownFiles,
+        false,
+      );
     } else if (node.kind === "foreach") {
       validateRef(
         node.source,

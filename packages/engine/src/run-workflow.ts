@@ -207,12 +207,22 @@ async function validateOutputs(
 }
 
 function outputPaths(
-  node: AgentWorkflowNode,
+  node: WorkflowNode & { kind: "agent" | "command" },
   directory: string,
 ): Record<string, string> {
-  return Object.fromEntries(
-    node.definition.outputs.map((name) => [name, join(directory, "out", name)]),
-  );
+  if (node.kind === "agent") {
+    return Object.fromEntries(
+      node.definition.outputs.map((name) => [
+        name,
+        join(directory, "out", name),
+      ]),
+    );
+  }
+  return {
+    stdout: join(directory, "out", "stdout.log"),
+    stderr: join(directory, "out", "stderr.log"),
+    exitCode: join(directory, "out", "exit-code.json"),
+  };
 }
 
 async function executeLeaf(
@@ -257,9 +267,17 @@ async function executeLeaf(
         ? {}
         : { feedback: prior ?? scope.feedback }),
     };
+    const rendered: ReferenceScope = {
+      ...scope,
+      outputs: outputPaths(node, directory),
+    };
     if (node.kind === "command") {
+      const renderedCommand = await renderTask(
+        node.definition.command,
+        rendered,
+      );
       let result = await execution.runner.runCommand(
-        node.definition,
+        { ...node.definition, command: renderedCommand },
         stepContext,
       );
       if (execution.context.hooks?.onNodeResult) {
@@ -271,10 +289,6 @@ async function executeLeaf(
     const provider = node.definition.model.split("/")[0];
     if (provider === undefined) throw new Error("model provider is missing");
     stepContext.providerSecret = execution.context.providerSecrets?.[provider];
-    const rendered: ReferenceScope = {
-      ...scope,
-      outputs: outputPaths(node, directory),
-    };
     const task = await renderTask(node.definition.task, rendered);
     const instructions =
       node.definition.instructions === undefined

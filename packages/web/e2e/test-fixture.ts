@@ -85,7 +85,9 @@ export interface TestServerFixture {
   cleanup: () => Promise<void>;
 }
 
-export async function createTestServerFixture(): Promise<TestServerFixture> {
+export async function createTestServerFixture(options?: {
+  initialWorkflows?: boolean;
+}): Promise<TestServerFixture> {
   const tempDir = await mkdtemp(join(tmpdir(), "aipilot-web-e2e-"));
   const dataDir = join(tempDir, "data");
   const authPath = join(tempDir, "auth.json");
@@ -114,10 +116,11 @@ export async function createTestServerFixture(): Promise<TestServerFixture> {
     "---\nname: test-expert\ndescription: Expert skill for testing\n---\n# Skill body\n",
   );
 
-  // Write sample workflow
+  // Write sample workflow if requested
   const workflowsDir = join(dataDir, "workflows");
   await mkdir(workflowsDir, { recursive: true });
-  const wfYaml = `
+  if (options?.initialWorkflows !== false) {
+    const wfYaml = `
 name: Sample Review Workflow
 inputs:
   - topic
@@ -146,7 +149,8 @@ nodes:
       outputs:
         - draft.txt
 `;
-  await writeFile(join(workflowsDir, "sample-review.yaml"), wfYaml, "utf8");
+    await writeFile(join(workflowsDir, "sample-review.yaml"), wfYaml, "utf8");
+  }
 
   // Create initial auth.json
   await writeFile(authPath, JSON.stringify({}), "utf8");

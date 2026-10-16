@@ -17,6 +17,7 @@ export interface EditorAgentNode {
   instructions?: string;
   interactive?: boolean;
   skillNames?: string[];
+  skillSourceDir?: string;
   outputs?: string[];
   schemas?: Record<string, Record<string, unknown>>;
 }
@@ -63,6 +64,7 @@ export type EditorNode =
   | EditorForeachNode;
 
 export interface EditorWorkflowDraft {
+  name?: string;
   inputs: string[];
   maxParallel: number;
   budgetUsd?: number;
@@ -126,6 +128,7 @@ export function createDefaultForeachNode(id: string): EditorForeachNode {
 }
 
 const KNOWN_WORKFLOW_KEYS = new Set([
+  "name",
   "inputs",
   "maxParallel",
   "budgetUsd",
@@ -153,6 +156,7 @@ const KNOWN_AGENT_DEF_KEYS = new Set([
   "instructions",
   "interactive",
   "skillNames",
+  "skillSourceDir",
   "outputs",
 ]);
 const KNOWN_COMMAND_KEYS = new Set([...KNOWN_COMMON_NODE_KEYS, "definition"]);
@@ -187,6 +191,8 @@ export function parseDraftFromObject(raw: unknown): DraftParseResult {
     }
   }
 
+  const name =
+    typeof rootRecord.name === "string" ? rootRecord.name : undefined;
   const inputs = Array.isArray(rootRecord.inputs)
     ? (rootRecord.inputs.filter((i) => typeof i === "string") as string[])
     : [];
@@ -307,6 +313,10 @@ export function parseDraftFromObject(raw: unknown): DraftParseResult {
         skillNames: Array.isArray(defRaw.skillNames)
           ? (defRaw.skillNames.filter((s) => typeof s === "string") as string[])
           : [],
+        skillSourceDir:
+          typeof defRaw.skillSourceDir === "string"
+            ? defRaw.skillSourceDir
+            : undefined,
         outputs: Array.isArray(defRaw.outputs)
           ? (defRaw.outputs.filter((o) => typeof o === "string") as string[])
           : [],
@@ -401,6 +411,7 @@ export function parseDraftFromObject(raw: unknown): DraftParseResult {
 
   return {
     draft: {
+      name,
       inputs,
       maxParallel,
       budgetUsd,
@@ -443,6 +454,9 @@ export function draftToPlainObject(
       if (n.interactive !== undefined) def.interactive = n.interactive;
       if (n.skillNames && n.skillNames.length > 0) {
         def.skillNames = [...n.skillNames];
+      }
+      if (n.skillSourceDir) {
+        def.skillSourceDir = n.skillSourceDir;
       }
       if (n.outputs && n.outputs.length > 0) {
         def.outputs = [...n.outputs];
@@ -487,6 +501,9 @@ export function draftToPlainObject(
     inputs: [...draft.inputs],
     maxParallel: draft.maxParallel,
   };
+  if (draft.name) {
+    root.name = draft.name;
+  }
   if (draft.budgetUsd !== undefined) {
     root.budgetUsd = draft.budgetUsd;
   }
@@ -545,6 +562,7 @@ export function duplicateSubtree(
           ? remapRef(node.instructions)
           : undefined,
         skillNames: node.skillNames ? [...node.skillNames] : [],
+        skillSourceDir: node.skillSourceDir,
         outputs: node.outputs ? [...node.outputs] : [],
         schemas: node.schemas
           ? JSON.parse(JSON.stringify(node.schemas))

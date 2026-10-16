@@ -1,5 +1,6 @@
 import type React from "react";
 import { useMemo, useState } from "react";
+import type { SkillInfo } from "../types.ts";
 import type {
   EditorCondition,
   EditorNode,
@@ -163,7 +164,7 @@ const WhenConditionsEditor: React.FC<WhenConditionsEditorProps> = ({
 interface PropertyDrawerProps {
   selectedNode: EditorNode | null;
   draft: EditorWorkflowDraft;
-  availableSkills: string[];
+  availableSkills: SkillInfo[];
   availableModels: Record<string, string[]>;
   onUpdateNode: (updated: EditorNode) => void;
   onUpdateDraftSettings: (settings: {
@@ -786,10 +787,10 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                   ) : (
                     availableSkills.map((sk) => {
                       const selected =
-                        selectedNode.skillNames?.includes(sk) ?? false;
+                        selectedNode.skillNames?.includes(sk.name) ?? false;
                       return (
                         <label
-                          key={sk}
+                          key={`${sk.sourceDir}-${sk.name}`}
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -803,21 +804,92 @@ export const PropertyDrawer: React.FC<PropertyDrawerProps> = ({
                             onChange={(e) => {
                               const current = selectedNode.skillNames ?? [];
                               const updated = e.target.checked
-                                ? [...current, sk]
-                                : current.filter((s) => s !== sk);
+                                ? [...current, sk.name]
+                                : current.filter((s) => s !== sk.name);
+                              const nextSource =
+                                updated.length > 0
+                                  ? (selectedNode.skillSourceDir ??
+                                    sk.sourceDir)
+                                  : undefined;
                               onUpdateNode({
                                 ...selectedNode,
                                 skillNames: updated,
+                                skillSourceDir: nextSource,
                               });
                             }}
                           />
-                          <span>{sk}</span>
+                          <span>{sk.name}</span>
+                          <span
+                            className="quiet"
+                            style={{
+                              fontSize: "10px",
+                              marginLeft: "auto",
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          >
+                            {sk.sourceDir}
+                          </span>
                         </label>
                       );
                     })
                   )}
                 </div>
               </div>
+
+              {selectedNode.skillNames &&
+                selectedNode.skillNames.length > 0 && (
+                  <div>
+                    <label
+                      htmlFor="drawer-agent-skillsourcedir"
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        marginBottom: "3px",
+                      }}
+                    >
+                      Skill Source Directory
+                    </label>
+                    <input
+                      id="drawer-agent-skillsourcedir"
+                      type="text"
+                      value={selectedNode.skillSourceDir ?? ""}
+                      placeholder="/path/to/skills"
+                      onChange={(e) => {
+                        onUpdateNode({
+                          ...selectedNode,
+                          skillSourceDir: e.target.value.trim() || undefined,
+                        });
+                      }}
+                      style={{
+                        width: "100%",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "11px",
+                      }}
+                    />
+
+                    {new Set(
+                      availableSkills
+                        .filter((s) =>
+                          selectedNode.skillNames?.includes(s.name),
+                        )
+                        .map((s) => s.sourceDir),
+                    ).size > 1 && (
+                      <div
+                        className="alert-warning"
+                        style={{
+                          fontSize: "11px",
+                          marginTop: "6px",
+                          lineHeight: "1.3",
+                        }}
+                      >
+                        ⚠️ Selected skills originate from multiple directories.
+                        Agent nodes only load from one directory (
+                        {selectedNode.skillSourceDir}).
+                      </div>
+                    )}
+                  </div>
+                )}
 
               <WhenConditionsEditor
                 conditions={selectedNode.when}

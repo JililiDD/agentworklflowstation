@@ -44,6 +44,7 @@ import {
   validateDraftLocally,
 } from "../editor/ProblemsPanel.tsx";
 import { PropertyDrawer } from "../editor/PropertyDrawer.tsx";
+import type { SkillInfo } from "../types.ts";
 
 const nodeTypes: NodeTypes = {
   agent: AgentNodeComponent,
@@ -85,7 +86,7 @@ const WorkflowEditorInner: React.FC<WorkflowEditorViewProps> = ({
   const [clipboard, setClipboard] = useState<EditorNode[] | null>(null);
 
   // Available skills & models from platform
-  const [skills, setSkills] = useState<string[]>([]);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [models, setModels] = useState<Record<string, string[]>>({});
 
   const { zoomIn, zoomOut, setViewport, fitView } = useReactFlow();
@@ -95,7 +96,7 @@ const WorkflowEditorInner: React.FC<WorkflowEditorViewProps> = ({
     const loadPlatformData = async () => {
       try {
         const sks = await api.listSkills();
-        setSkills(sks.map((s) => s.name));
+        setSkills(sks);
       } catch {}
       // Standard recommended models
       setModels({
@@ -878,6 +879,7 @@ const WorkflowEditorInner: React.FC<WorkflowEditorViewProps> = ({
           </button>
 
           <button
+            id="editor-run-btn"
             className="btn primary"
             type="button"
             disabled={!isValid || isDirty}

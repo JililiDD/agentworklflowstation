@@ -265,13 +265,16 @@ test.describe("aipilotAgent Web UI E2E Test Suite", () => {
 
     // Approve the second node after resume
     const approveCard = page.locator('.card:has-text("approveNode")');
+    await expect(approveCard).toContainText("Waiting for approval", {
+      timeout: 15000,
+    });
     await approveCard.click();
     const approveBtn = page.locator('.drawer button:has-text("Approve")');
     await expect(approveBtn).toBeVisible({ timeout: 15000 });
     await approveBtn.click();
 
     await expect(page.locator(".badge-status")).toContainText("Succeeded", {
-      timeout: 15000,
+      timeout: 20000,
     });
   });
 

@@ -79,6 +79,25 @@ export interface DurableRunResult {
   warnings: string[];
 }
 
+const stateWrites = new Map<string, Promise<void>>();
+async function saveStateQueued(
+  runDir: string,
+  state: DurableRunState,
+): Promise<void> {
+  const previous = stateWrites.get(runDir) ?? Promise.resolve();
+  const next = previous
+    .catch(() => {})
+    .then(() => saveStateAtomic(runDir, state));
+  stateWrites.set(runDir, next);
+  try {
+    await next;
+  } finally {
+    if (stateWrites.get(runDir) === next) {
+      stateWrites.delete(runDir);
+    }
+  }
+}
+
 export async function saveStateAtomic(
   runDir: string,
   state: DurableRunState,
@@ -324,7 +343,7 @@ async function runDurableLoop(
         }
         state.updatedAt = new Date().toISOString();
         void appendRunEvent(runDir, { type: "state", event });
-        void saveStateAtomic(runDir, state);
+        void saveStateQueued(runDir, state);
         options.callbacks?.onState?.(event);
       },
       onStepEvent: (path, event) => {
@@ -386,7 +405,7 @@ async function runDurableLoop(
           diffPath: state.nodes[path]?.diffPath,
         };
         state.updatedAt = new Date().toISOString();
-        await saveStateAtomic(runDir, state);
+        await saveStateQueued(runDir, state);
         return result;
       },
     },
@@ -395,7 +414,7 @@ async function runDurableLoop(
   const workflowResult = await runWorkflow(workflow, runner, context);
   state.status = workflowResult.status;
   state.updatedAt = new Date().toISOString();
-  await saveStateAtomic(runDir, state);
+  await saveStateQueued(runDir, state);
 
   return {
     state,

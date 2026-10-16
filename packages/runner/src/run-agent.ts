@@ -166,7 +166,7 @@ export function createAgentRunner(
         .join("\n\n");
       await writeFile(join(context.outputDir, "task.md"), taskText);
       const systemPrompt = [
-        "Write declared outputs under the out/ directory.",
+        `Write declared outputs under the directory: ${outDir}/ (absolute path). Do not create an out/ directory in the repository workspace.`,
         buildSkillPrompt(skills),
         ...(definition.interactive
           ? [

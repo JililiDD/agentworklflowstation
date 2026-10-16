@@ -1,6 +1,10 @@
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import {
+  BUILTIN_EXAMPLES,
+  type ExampleWorkflowItem,
+} from "../editor/examples.ts";
 import type { RunSetupValidation, WorkflowLibraryItem } from "../types";
 
 interface WorkflowsViewProps {
@@ -61,6 +65,32 @@ export const WorkflowsView: React.FC<WorkflowsViewProps> = ({ onStartRun }) => {
     setValidation(null);
     setInputValues({});
     setBudgetUsd(wf.budgetUsd);
+  };
+
+  const handleOpenExample = async (example: ExampleWorkflowItem) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Determine non-conflicting ID
+      let targetId = example.id;
+      let counter = 1;
+      const existingIds = new Set(workflows.map((w) => w.id));
+      while (existingIds.has(targetId)) {
+        targetId = `${example.id}-${counter++}`;
+      }
+
+      await api.saveWorkflow({
+        id: targetId,
+        updatedObject: example.workflow,
+        layout: example.layout,
+      });
+
+      window.location.hash = `#workflow-editor/${encodeURIComponent(targetId)}`;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
+    }
   };
 
   const handleValidate = async () => {
@@ -366,13 +396,75 @@ export const WorkflowsView: React.FC<WorkflowsViewProps> = ({ onStartRun }) => {
 
       {/* Workflows Grid */}
       {workflows.length === 0 ? (
-        <div className="empty-state">
+        <div className="empty-state" style={{ padding: "32px 16px" }}>
           <h3>No Workflows Found</h3>
-          <p>
-            Place YAML workflow files in your data directory (
-            <span className="code">~/.local/share/aipilotagent/workflows/</span>
-            ) or save them via API.
+          <p style={{ maxWidth: "540px", margin: "0 auto 16px" }}>
+            Create a custom workflow from scratch, or open one of the builtin
+            examples below to explore multi-model pipelines.
           </p>
+
+          <div style={{ marginBottom: "28px" }}>
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => {
+                window.location.hash = "#workflow-editor/new";
+              }}
+            >
+              + New Workflow
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "16px",
+              maxWidth: "720px",
+              margin: "0 auto",
+              textAlign: "left",
+            }}
+          >
+            {BUILTIN_EXAMPLES.map((ex) => (
+              <div
+                key={ex.id}
+                data-testid={`example-${ex.id}`}
+                style={{
+                  background: "var(--panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "6px",
+                  padding: "16px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: "14px" }}>
+                  {ex.name}
+                </div>
+                <div
+                  className="quiet"
+                  style={{
+                    fontSize: "12px",
+                    lineHeight: "1.4",
+                    flex: 1,
+                  }}
+                >
+                  {ex.description}
+                </div>
+                <div style={{ marginTop: "8px" }}>
+                  <button
+                    className="btn"
+                    type="button"
+                    data-testid={`open-example-${ex.id}`}
+                    onClick={() => void handleOpenExample(ex)}
+                  >
+                    Open Example →
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="card-grid">

@@ -677,13 +677,28 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
         <div className="stat">
           <span className="k">Cost</span>
           <span className="v">
-            ${cost.toFixed(2)}
-            {budget !== undefined && (
+            {runState.totalUsage.costUsd !== undefined ? (
               <>
-                <span className="meter" title={`${costPercent}% of budget`}>
-                  <i style={{ width: `${costPercent}%` }} />
+                ${runState.totalUsage.costUsd.toFixed(2)}
+                {budget !== undefined && (
+                  <>
+                    <span className="meter" title={`${costPercent}% of budget`}>
+                      <i style={{ width: `${costPercent}%` }} />
+                    </span>
+                    <span className="k">of ${budget.toFixed(2)}</span>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <span title="Model catalog has no rate; cost unknown">
+                  — (unknown)
                 </span>
-                <span className="k">of ${budget.toFixed(2)}</span>
+                {budget !== undefined && (
+                  <span className="k" style={{ marginLeft: "4px" }}>
+                    (budget ${budget.toFixed(2)})
+                  </span>
+                )}
               </>
             )}
           </span>

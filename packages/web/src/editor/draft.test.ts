@@ -72,6 +72,7 @@ test("round-trips nested group -> foreach -> group -> agent structure", () => {
                       instructions: "Be precise",
                       interactive: false,
                       skillNames: ["git-helper"],
+                      skillSourceDir: "/path/to/skills",
                       outputs: ["out.json"],
                     },
                     schemas: {
