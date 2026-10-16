@@ -43,11 +43,78 @@ export const api = {
     apiRequest<{ id: string; yaml: string; updatedAt: string }>(
       `/api/workflows/${encodeURIComponent(id)}`,
     ),
-  saveWorkflow: (id: string, yaml: string) =>
-    apiRequest<{ id: string; yaml: string; path: string }>("/api/workflows", {
-      method: "POST",
-      body: JSON.stringify({ id, yaml }),
-    }),
+  saveWorkflow: (
+    idOrOptions:
+      | string
+      | {
+          id: string;
+          yaml?: string;
+          updatedObject?: Record<string, unknown>;
+          expectedYaml?: string;
+          layout?: Record<
+            string,
+            {
+              x: number;
+              y: number;
+              width?: number;
+              height?: number;
+              collapsed?: boolean;
+            }
+          >;
+        },
+    maybeYaml?: string,
+  ) => {
+    if (typeof idOrOptions === "string") {
+      return apiRequest<{ id: string; yaml: string; path: string }>(
+        "/api/workflows",
+        {
+          method: "POST",
+          body: JSON.stringify({ id: idOrOptions, yaml: maybeYaml }),
+        },
+      );
+    }
+    return apiRequest<{ id: string; yaml: string; path: string }>(
+      "/api/workflows",
+      {
+        method: "POST",
+        body: JSON.stringify(idOrOptions),
+      },
+    );
+  },
+  getWorkflowLayout: (id: string) =>
+    apiRequest<{
+      version: number;
+      current: Record<
+        string,
+        {
+          x: number;
+          y: number;
+          width?: number;
+          height?: number;
+          collapsed?: boolean;
+        }
+      >;
+    }>(`/api/workflows/${encodeURIComponent(id)}/layout`),
+  saveWorkflowLayout: (
+    id: string,
+    layout: Record<
+      string,
+      {
+        x: number;
+        y: number;
+        width?: number;
+        height?: number;
+        collapsed?: boolean;
+      }
+    >,
+  ) =>
+    apiRequest<{ version: number }>(
+      `/api/workflows/${encodeURIComponent(id)}/layout`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ layout }),
+      },
+    ),
   deleteWorkflow: (id: string) =>
     apiRequest<{ ok: boolean }>(`/api/workflows/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -111,7 +178,7 @@ export const api = {
   getRun: (runId: string) =>
     apiRequest<DurableRunState>(`/api/runs/${encodeURIComponent(runId)}`),
   validateRunSetup: (data: {
-    targetRepo: string;
+    targetRepo?: string;
     workflowId?: string;
     workflowYaml?: string;
     inputs?: Record<string, string>;

@@ -49,13 +49,13 @@
 - Enables: 第 6 阶段复用画布渲染、嵌套框、抽屉和界面框架。
 - Work-item: 2026-10-15-2220-phase-5-run-view.md
 
-### Phase 6: 工作流编辑器  [planned]
+### Phase 6: 工作流编辑器  [done]
 
 - Goal: 在画布上搭建、校验和保存工作流，不再手写 YAML。
 - Verifiable outcome: 在编辑器中搭出一个含嵌套组节点和 foreach 的工作流。看到校验错误并修正。保存后，能在运行视图中启动它。Playwright 测试覆盖创建、连接、嵌套、校验和保存。
 - Depends on: Phase 5
 - Enables: 第 7 阶段用编辑器搭建验收工作流。
-- Work-item:
+- Work-item: 2026-10-16-0823-phase-6-workflow-editor.md
 
 ### Phase 7: 示例工作流验收  [planned]
 

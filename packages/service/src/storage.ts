@@ -46,6 +46,11 @@ export function getRunsDir(dataDir: string): string {
   return join(resolve(dataDir), "runs");
 }
 
+export function getWorkflowLayoutPath(dataDir: string, id: string): string {
+  const cleanId = safeId(id, "workflow ID");
+  return join(getWorkflowsDir(dataDir), `${cleanId}.layout.json`);
+}
+
 export function getSettingsPath(dataDir: string): string {
   return join(resolve(dataDir), "settings.json");
 }

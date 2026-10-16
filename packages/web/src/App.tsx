@@ -6,6 +6,7 @@ import { InboxView } from "./views/InboxView";
 import { RunDetailView } from "./views/RunDetailView";
 import { RunsListView } from "./views/RunsListView";
 import { SettingsView } from "./views/SettingsView";
+import { WorkflowEditorView } from "./views/WorkflowEditorView";
 import { WorkflowsView } from "./views/WorkflowsView";
 
 export const App: React.FC = () => {
@@ -69,8 +70,14 @@ export const App: React.FC = () => {
   let view = "workflows";
   let runId: string | undefined;
   let initialNodePath: string | undefined;
+  let editorWorkflowId: string | undefined;
 
-  if (cleanHash.startsWith("runs/")) {
+  if (cleanHash.startsWith("workflow-editor/")) {
+    view = "workflow-editor";
+    editorWorkflowId = decodeURIComponent(
+      cleanHash.slice("workflow-editor/".length),
+    );
+  } else if (cleanHash.startsWith("runs/")) {
     view = "run-detail";
     const rest = cleanHash.slice(5);
     const qIndex = rest.indexOf("?");
@@ -132,6 +139,13 @@ export const App: React.FC = () => {
           onSelectNode={(targetRunId, targetNode) => {
             window.location.hash = `#runs/${encodeURIComponent(targetRunId)}?node=${encodeURIComponent(targetNode)}`;
           }}
+        />
+      )}
+
+      {view === "workflow-editor" && (
+        <WorkflowEditorView
+          workflowId={editorWorkflowId ?? "new"}
+          onNavigate={handleNavigate}
         />
       )}
 

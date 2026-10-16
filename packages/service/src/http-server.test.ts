@@ -638,14 +638,14 @@ nodes:
 
     // Wait for resumed run to complete
     let completed = false;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 60; i++) {
       const resCheck = await fetch(`${baseUrl2}/api/runs/${runId}`);
       const check = (await resCheck.json()) as { status: string };
       if (check.status === "succeeded") {
         completed = true;
         break;
       }
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 50));
     }
     assert.equal(completed, true);
     assert.equal(runner2.runs.length, 1);

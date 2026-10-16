@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { afterEach, beforeEach } from "node:test";
@@ -12,9 +12,14 @@ import { safeId } from "./storage.ts";
 import {
   deleteWorkflow,
   getWorkflow,
+  getWorkflowLayout,
   listWorkflows,
   saveWorkflow,
+  saveWorkflowLayout,
+  updateWorkflowDocument,
   validateWorkflow,
+  WorkflowConflictError,
+  WorkflowSafetyError,
 } from "./workflow-library.ts";
 
 let tempDir: string;
@@ -189,4 +194,246 @@ nodes:
     () => validateWorkflow(badRefYaml, capabilities),
     /invalid or non-ancestor reference/,
   );
+});
+
+test("updateWorkflowDocument preserves comments and unknown fields on existing YAML", () => {
+  const original = `
+# Global workflow comment
+inputs:
+  - topic
+# Parallel setting
+maxParallel: 1
+nodes:
+  # First worker comment
+  - id: worker1
+    kind: command
+    customProp: "do not touch this"
+    definition:
+      task: run echo
+      command: echo original
+  - id: worker2
+    kind: command
+    definition:
+      task: second worker
+      command: echo worker2
+`;
+
+  const updatedRecord = {
+    inputs: ["topic", "extra"],
+    maxParallel: 2,
+    nodes: [
+      {
+        id: "worker1",
+        kind: "command",
+        definition: {
+          task: "run echo updated",
+          command: "echo updated",
+        },
+      },
+      {
+        id: "worker2",
+        kind: "command",
+        definition: {
+          task: "second worker",
+          command: "echo worker2",
+        },
+      },
+      {
+        id: "worker3",
+        kind: "command",
+        definition: {
+          task: "third worker",
+          command: "echo worker3",
+        },
+      },
+    ],
+  };
+
+  const updatedYaml = updateWorkflowDocument(original, updatedRecord);
+  assert.match(updatedYaml, /# Global workflow comment/);
+  assert.match(updatedYaml, /# Parallel setting/);
+  assert.match(updatedYaml, /# First worker comment/);
+  assert.match(updatedYaml, /customProp:\s*"do not touch this"/);
+  assert.match(updatedYaml, /echo updated/);
+  assert.match(updatedYaml, /echo worker3/);
+});
+
+test("saveWorkflow refuses to delete nodes with attached comments to protect data", async () => {
+  const commentedYaml = `
+nodes:
+  # Crucial comment describing worker1 logic
+  - id: worker1
+    kind: command
+    definition:
+      task: step
+      command: echo step
+`;
+  await saveWorkflow(tempDir, "commented", commentedYaml);
+
+  // Attempt to save an update where worker1 is deleted
+  const updateWithoutWorker1 = {
+    nodes: [
+      {
+        id: "worker2",
+        kind: "command",
+        definition: { task: "step 2", command: "echo step2" },
+      },
+    ],
+  };
+
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        dataDir: tempDir,
+        id: "commented",
+        updatedObject: updateWithoutWorker1,
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof WorkflowSafetyError);
+      assert.match((err as Error).message, /attached comments/);
+      return true;
+    },
+  );
+
+  // Verify original file unchanged
+  const current = await getWorkflow(tempDir, "commented");
+  assert.match(current.yaml, /Crucial comment/);
+});
+
+test("saveWorkflow rejects YAML containing aliases or anchors", async () => {
+  const aliasYaml = `
+common: &commonDef
+  task: shared
+nodes:
+  - id: step1
+    kind: command
+    definition:
+      <<: *commonDef
+      command: echo step1
+`;
+  await saveWorkflow(tempDir, "with-alias", aliasYaml);
+
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        dataDir: tempDir,
+        id: "with-alias",
+        updatedObject: {
+          nodes: [
+            {
+              id: "step1",
+              kind: "command",
+              definition: { command: "echo changed" },
+            },
+          ],
+        },
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof WorkflowSafetyError);
+      assert.match((err as Error).message, /aliases or anchors/);
+      return true;
+    },
+  );
+});
+
+test("saveWorkflow preserves .yml extension and detects revision conflicts", async () => {
+  const workflowsDir = join(tempDir, "workflows");
+  await mkdir(workflowsDir, { recursive: true });
+  const ymlPath = join(workflowsDir, "legacy.yml");
+  const initialYaml = "maxParallel: 1\nnodes: []\n";
+  await writeFile(ymlPath, initialYaml, "utf8");
+
+  // Save update to legacy
+  const saved = await saveWorkflow({
+    dataDir: tempDir,
+    id: "legacy",
+    updatedObject: { maxParallel: 4, nodes: [] },
+    expectedYaml: initialYaml,
+  });
+  assert.equal(saved.path, ymlPath);
+  assert.ok(saved.path.endsWith(".yml"));
+
+  // Check revision conflict
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        dataDir: tempDir,
+        id: "legacy",
+        updatedObject: { maxParallel: 8, nodes: [] },
+        expectedYaml: "outdated yaml content",
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof WorkflowConflictError);
+      assert.match((err as Error).message, /revision conflict/);
+      return true;
+    },
+  );
+});
+
+test("saveWorkflow refuses to write to a symlink", async () => {
+  const workflowsDir = join(tempDir, "workflows");
+  await mkdir(workflowsDir, { recursive: true });
+  const outsideFile = join(tempDir, "outside.yaml");
+  await writeFile(outsideFile, "nodes: []\n", "utf8");
+  const linkPath = join(workflowsDir, "symlinked.yaml");
+  await symlink(outsideFile, linkPath);
+
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        dataDir: tempDir,
+        id: "symlinked",
+        yamlText: "nodes: []\n",
+      }),
+    /symlinks are forbidden/,
+  );
+});
+
+test("saveWorkflowLayout and getWorkflowLayout handle sidecar persistence, corruptions and failures", async () => {
+  const layout = {
+    step1: { x: 100, y: 150, width: 220, height: 120 },
+    step2: { x: 400, y: 150, collapsed: true },
+  };
+
+  // Normal save and get
+  await saveWorkflowLayout(tempDir, "flow-layout", layout, "rev123");
+  const loaded = await getWorkflowLayout(tempDir, "flow-layout");
+  assert.equal(loaded?.version, 1);
+  assert.deepEqual(loaded?.current.step1, layout.step1);
+  assert.equal(loaded?.revisions?.rev123?.step2?.collapsed, true);
+
+  // Corrupted layout returns null without crashing
+  const workflowsDir = join(tempDir, "workflows");
+  const corruptPath = join(workflowsDir, "corrupted.layout.json");
+  await writeFile(corruptPath, "{ broken json", "utf8");
+  await assert.rejects(() => getWorkflowLayout(tempDir, "corrupted"));
+
+  // Symlinked layout is forbidden
+  const outsidePath = join(tempDir, "outside.layout.json");
+  await writeFile(outsidePath, JSON.stringify({ version: 1, current: {} }));
+  const linkPath = join(workflowsDir, "symlink-flow.layout.json");
+  await symlink(outsidePath, linkPath);
+  await assert.rejects(
+    () => getWorkflowLayout(tempDir, "symlink-flow"),
+    /symlinks are forbidden/,
+  );
+  await assert.rejects(
+    () => saveWorkflowLayout(tempDir, "symlink-flow", layout),
+    /symlinks are forbidden/,
+  );
+
+  // Fault injection: layout write failure leaves YAML untouched
+  // We make symlink on target layout so saving layout fails
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        dataDir: tempDir,
+        id: "symlink-flow",
+        yamlText: "maxParallel: 1\nnodes: []\n",
+        layout,
+      }),
+    /symlinks are forbidden/,
+  );
+  // Target YAML was never created
+  await assert.rejects(() => getWorkflow(tempDir, "symlink-flow"), /not found/);
 });

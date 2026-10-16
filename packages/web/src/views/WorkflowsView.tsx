@@ -39,6 +39,23 @@ export const WorkflowsView: React.FC<WorkflowsViewProps> = ({ onStartRun }) => {
     void loadWorkflows();
   }, [loadWorkflows]);
 
+  useEffect(() => {
+    if (workflows.length > 0) {
+      const hash = window.location.hash;
+      const match = /[?&]run=([^&]+)/.exec(hash);
+      if (match?.[1]) {
+        const runWfId = decodeURIComponent(match[1]);
+        const target = workflows.find((w) => w.id === runWfId);
+        if (target) {
+          setSelectedWorkflow(target);
+          setValidation(null);
+          setInputValues({});
+          setBudgetUsd(target.budgetUsd);
+        }
+      }
+    }
+  }, [workflows]);
+
   const handleSelectToRun = (wf: WorkflowLibraryItem) => {
     setSelectedWorkflow(wf);
     setValidation(null);
@@ -117,6 +134,15 @@ export const WorkflowsView: React.FC<WorkflowsViewProps> = ({ onStartRun }) => {
             repositories
           </p>
         </div>
+        <button
+          className="btn primary"
+          type="button"
+          onClick={() => {
+            window.location.hash = "#workflow-editor/new";
+          }}
+        >
+          + Create Workflow
+        </button>
       </div>
 
       {error && <div className="alert-error">{error}</div>}
@@ -403,14 +429,25 @@ export const WorkflowsView: React.FC<WorkflowsViewProps> = ({ onStartRun }) => {
                 <span className="quiet" style={{ fontSize: "11px" }}>
                   {new Date(wf.updatedAt).toLocaleDateString()}
                 </span>
-                <button
-                  className="btn primary"
-                  type="button"
-                  disabled={!wf.valid}
-                  onClick={() => handleSelectToRun(wf)}
-                >
-                  Run Workflow
-                </button>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => {
+                      window.location.hash = `#workflow-editor/${encodeURIComponent(wf.id)}`;
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={!wf.valid}
+                    onClick={() => handleSelectToRun(wf)}
+                  >
+                    Run Workflow
+                  </button>
+                </div>
               </div>
             </div>
           ))}

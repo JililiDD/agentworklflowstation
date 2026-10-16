@@ -19,8 +19,13 @@ import { assertNoPathTraversal, getDataDir } from "./storage.ts";
 import {
   deleteWorkflow,
   getWorkflow,
+  getWorkflowLayout,
   listWorkflows,
   saveWorkflow,
+  saveWorkflowLayout,
+  WorkflowConflictError,
+  type WorkflowNodeLayout,
+  WorkflowSafetyError,
 } from "./workflow-library.ts";
 
 export interface HttpServerOptions {
@@ -225,18 +230,66 @@ export function createPlatformHttpServer(options: HttpServerOptions): {
       if (pathname === "/api/workflows" && method === "POST") {
         const body = (await readJsonBody(req)) as Record<string, unknown>;
         const id = body.id as string;
-        const yaml = body.yaml as string;
+        const yaml = body.yaml as string | undefined;
+        const updatedObject = body.updatedObject as
+          | Record<string, unknown>
+          | undefined;
+        const expectedYaml = body.expectedYaml as string | undefined;
+        const layout = body.layout as
+          | Record<string, WorkflowNodeLayout>
+          | undefined;
         if (!id || typeof id !== "string") {
           sendError(res, 400, "id is required");
           return;
         }
-        if (!yaml || typeof yaml !== "string") {
-          sendError(res, 400, "yaml is required");
+        if (!yaml && !updatedObject) {
+          sendError(res, 400, "either yaml or updatedObject is required");
           return;
         }
-        const result = await saveWorkflow(dataDir, id, yaml);
-        sendJson(res, 201, result);
+        try {
+          const result = await saveWorkflow({
+            dataDir,
+            id,
+            yamlText: yaml,
+            updatedObject,
+            expectedYaml,
+            layout,
+          });
+          sendJson(res, 201, result);
+        } catch (err) {
+          if (err instanceof WorkflowSafetyError) {
+            sendError(res, 422, err.message);
+          } else if (err instanceof WorkflowConflictError) {
+            sendError(res, 409, err.message);
+          } else {
+            sendError(
+              res,
+              400,
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        }
         return;
+      }
+
+      const layoutMatch = /^\/api\/workflows\/([^/]+)\/layout$/.exec(pathname);
+      if (layoutMatch) {
+        const id = decodeURIComponent(layoutMatch[1] ?? "");
+        if (method === "GET") {
+          const layoutData = await getWorkflowLayout(dataDir, id);
+          sendJson(res, 200, layoutData ?? { version: 1, current: {} });
+          return;
+        }
+        if (method === "PUT") {
+          const body = (await readJsonBody(req)) as Record<string, unknown>;
+          const layout = (body.layout ?? body) as Record<
+            string,
+            WorkflowNodeLayout
+          >;
+          const saved = await saveWorkflowLayout(dataDir, id, layout);
+          sendJson(res, 200, saved);
+          return;
+        }
       }
 
       const workflowMatch = /^\/api\/workflows\/([^/]+)$/.exec(pathname);
@@ -249,13 +302,41 @@ export function createPlatformHttpServer(options: HttpServerOptions): {
         }
         if (method === "PUT") {
           const body = (await readJsonBody(req)) as Record<string, unknown>;
-          const yaml = body.yaml as string;
-          if (!yaml || typeof yaml !== "string") {
-            sendError(res, 400, "yaml is required");
+          const yaml = body.yaml as string | undefined;
+          const updatedObject = body.updatedObject as
+            | Record<string, unknown>
+            | undefined;
+          const expectedYaml = body.expectedYaml as string | undefined;
+          const layout = body.layout as
+            | Record<string, WorkflowNodeLayout>
+            | undefined;
+          if (!yaml && !updatedObject) {
+            sendError(res, 400, "either yaml or updatedObject is required");
             return;
           }
-          const result = await saveWorkflow(dataDir, id, yaml);
-          sendJson(res, 200, result);
+          try {
+            const result = await saveWorkflow({
+              dataDir,
+              id,
+              yamlText: yaml,
+              updatedObject,
+              expectedYaml,
+              layout,
+            });
+            sendJson(res, 200, result);
+          } catch (err) {
+            if (err instanceof WorkflowSafetyError) {
+              sendError(res, 422, err.message);
+            } else if (err instanceof WorkflowConflictError) {
+              sendError(res, 409, err.message);
+            } else {
+              sendError(
+                res,
+                400,
+                err instanceof Error ? err.message : String(err),
+              );
+            }
+          }
           return;
         }
         if (method === "DELETE") {

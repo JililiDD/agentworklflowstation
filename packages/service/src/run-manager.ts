@@ -865,16 +865,18 @@ export class RunManager {
     const missingInputs: string[] = [];
     let workflowDef: WorkflowDefinition | undefined;
 
-    // 1. Repo validation
-    try {
-      const repoStatus = await validateRepository(options.targetRepo);
-      if (repoStatus.hasUncommittedChanges) {
-        warnings.push(
-          "target repository has uncommitted changes which will not be included in the run",
-        );
+    // 1. Repo validation (if provided)
+    if (options.targetRepo && options.targetRepo.trim().length > 0) {
+      try {
+        const repoStatus = await validateRepository(options.targetRepo);
+        if (repoStatus.hasUncommittedChanges) {
+          warnings.push(
+            "target repository has uncommitted changes which will not be included in the run",
+          );
+        }
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : String(err));
       }
-    } catch (err) {
-      errors.push(err instanceof Error ? err.message : String(err));
     }
 
     // 2. Workflow validation
